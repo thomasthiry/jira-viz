@@ -9,16 +9,20 @@ underway, and what has not been started at all.
 ## What it shows
 
 - **A KPI strip** &mdash; overall completion, epic count, epics with no work finished, stalled issues.
-- **Epic progress bars** &mdash; one row per epic, stacked Done / In progress / To do. Bar length is
-  the *size* of the epic, so a large untouched epic is the longest, palest bar on the page.
-  Rows expand in place to their stories, and stories to their subtasks.
-- **A treemap** &mdash; area is size, depth of colour is completion.
-- **A risk quadrant** &mdash; size against completion; large and barely started sits top-left.
-- **A stalled table** &mdash; in-progress work nobody has touched for N days.
+- **Epic progress bars** &mdash; one row per epic, stacked Done / In progress / To do in
+  green / amber / red. Bar length is the *size* of the epic, so a large untouched epic is the
+  longest, reddest bar on the page. Rows expand in place to their stories, and stories to their
+  subtasks.
+- **Badges** &mdash; *At risk*, *Not started*, *Stalled*, *Unestimated*, *Complete*.
+- **People** &mdash; a story row lists everyone on it: its own assignee plus every subtask
+  assignee, de-duplicated, with the full list on hover.
 
-Progress is drawn as a single-hue ordinal ramp (pale = to do, deep = done) rather than the usual
-red/amber/green, so it stays readable for colour-blind viewers. Red and amber are reserved for
-the *at risk* and *stalled* badges, which always carry a word as well as a colour.
+Red and green are the classic colour-blind confusion pair, so the bar is never the only cue:
+segments always run done, in progress, to do; the completion percentage sits beside every bar;
+and the legend and badges carry words.
+
+The report opens in **dark theme** by default; the Theme button toggles to light and the choice
+is remembered per browser.
 
 ## Quick start, without a Jira instance
 
@@ -101,8 +105,8 @@ map individual status names in `appsettings.json`:
 
 ## Notes
 
-- The report is one file. Charts load ECharts from cdnjs (pinned, with an integrity hash); if
-  that is blocked, the bars and every table still render.
+- The report is one file with **no external requests at all** &mdash; no CDN, no fonts, no scripts.
+  It works from `file://` on a machine with no internet.
 - Nothing is ever written back to Jira.
-- Burnup and cumulative-flow charts are out of scope for now: they need each issue's changelog,
-  which is a far heavier fetch.
+- Burnup and cumulative-flow charts are out of scope: they need each issue's changelog, which is
+  a far heavier fetch.

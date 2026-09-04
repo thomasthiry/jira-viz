@@ -1,18 +1,32 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Jira portfolio status</title>
+<script>
+// Dark is the default theme; a saved choice overrides it. This runs before first paint, so a
+// viewer who has chosen light never sees a dark flash on load.
+(function () {
+  try {
+    var saved = localStorage.getItem("jiraviz-theme");
+    document.documentElement.setAttribute("data-theme", saved === "light" ? "light" : "dark");
+  } catch (err) {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+})();
+</script>
 <style>
 /* ---------------------------------------------------------------------------
    Design tokens.
 
-   Progress is encoded as a single-hue ordinal blue ramp: pale = to do, mid =
-   in progress, deep = done. One hue keeps the whole report readable for
-   colour-blind viewers, and "more ink = more finished" needs no legend lookup.
-   Red and amber are reserved for status badges (at risk, stalled), which always
-   ship with an icon and a word so colour never carries meaning on its own.
+   Progress uses the conventional red / amber / green status colours: red = to do,
+   amber = in progress, green = done. These are the fixed status steps, identical in
+   both themes, so a bar means the same thing whichever theme it is read in.
+
+   Red and green are the classic colour-blind confusion pair, so the bar is never the
+   only cue: segments are always ordered done, in progress, to do; the completion
+   percentage sits beside every bar; and the legend and badges carry words.
    --------------------------------------------------------------------------- */
 :root {
   color-scheme: light;
@@ -27,15 +41,19 @@
   --baseline:       #c3c2b7;
   --border:         rgba(11, 11, 11, 0.10);
 
-  /* Ordinal progress ramp (validated: one hue, monotone L, light end 2.06:1) */
-  --todo:        #86b6ef;
-  --inprogress:  #2a78d6;
-  --done:        #104281;
-
-  /* Status - fixed, never themed. Always paired with an icon + label. */
+  /* Status colours - fixed, never themed, so they read identically in both modes. */
   --critical: #d03b3b;
   --warning:  #fab219;
   --good:     #0ca30c;
+
+  /* Interactive blue - deliberately outside the status set, so a link or a focus ring
+     never reads as a status. */
+  --link: #2a78d6;
+
+  /* The three progress buckets, mapped onto those same status steps. */
+  --todo:        var(--critical);
+  --inprogress:  var(--warning);
+  --done:        var(--good);
 
   --track: #eceae4;
 
@@ -47,6 +65,7 @@
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
+    --link:           #3987e5;
     --plane:          #0d0d0d;
     --surface:        #1a1a19;
     --surface-sunken: #131312;
@@ -56,15 +75,13 @@
     --gridline:       #2c2c2a;
     --baseline:       #383835;
     --border:         rgba(255, 255, 255, 0.10);
-    --todo:        #184f95;
-    --inprogress:  #3987e5;
-    --done:        #9ec5f4;
     --track: #232322;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --link:           #3987e5;
   --plane:          #0d0d0d;
   --surface:        #1a1a19;
   --surface-sunken: #131312;
@@ -74,9 +91,6 @@
   --gridline:       #2c2c2a;
   --baseline:       #383835;
   --border:         rgba(255, 255, 255, 0.10);
-  --todo:        #184f95;
-  --inprogress:  #3987e5;
-  --done:        #9ec5f4;
   --track: #232322;
 }
 
@@ -113,7 +127,7 @@ header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spaci
   border-radius: 8px; padding: 6px 11px; cursor: pointer;
 }
 .btn:hover { color: var(--text-primary); border-color: var(--baseline); }
-.btn[aria-pressed="true"] { color: var(--text-primary); border-color: var(--inprogress); }
+.btn[aria-pressed="true"] { color: var(--text-primary); border-color: var(--baseline); background: var(--surface-sunken); }
 
 /* ---------- KPI strip ---------- */
 
@@ -200,7 +214,7 @@ header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spaci
   background: none; color: inherit; font: inherit; text-align: left;
 }
 .epic-head:hover { background: var(--surface-sunken); }
-.epic-head:focus-visible { outline: 2px solid var(--inprogress); outline-offset: -2px; }
+.epic-head:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 
 .chev { color: var(--text-muted); transition: transform 0.12s ease; font-size: 11px; }
 .epic.open .chev { transform: rotate(90deg); }
@@ -247,20 +261,20 @@ header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spaci
 .story { border-top: 1px solid var(--gridline); }
 .story-head {
   display: grid; align-items: center; gap: 12px;
-  grid-template-columns: 14px minmax(180px, 2.4fr) minmax(90px, 1.4fr) 96px 52px;
+  grid-template-columns: 14px minmax(180px, 2.2fr) minmax(90px, 1.1fr) minmax(120px, 1.6fr) 52px;
   padding: 7px 4px; width: 100%; border: 0; background: none;
   color: inherit; font: inherit; text-align: left; cursor: default;
 }
 .story-head.expandable { cursor: pointer; }
 .story-head.expandable:hover { background: var(--surface-sunken); }
-.story-head:focus-visible { outline: 2px solid var(--inprogress); outline-offset: -2px; }
+.story-head:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 
 .story .title { min-width: 0; display: flex; align-items: baseline; gap: 7px; }
 .story .title .summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 a.key {
   font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: var(--inprogress); text-decoration: none; flex: none;
+  color: var(--link); text-decoration: none; flex: none;
 }
 a.key:hover { text-decoration: underline; }
 
@@ -280,17 +294,6 @@ a.key:hover { text-decoration: underline; }
 .subtask .summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .who { color: var(--text-muted); font-size: 12px; text-align: right; white-space: nowrap;
        overflow: hidden; text-overflow: ellipsis; }
-
-/* ---------- charts ---------- */
-
-.chart-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
-.chart { height: 340px; width: 100%; }
-.chart-fallback {
-  display: none; padding: 12px; border: 1px dashed var(--baseline);
-  border-radius: 8px; color: var(--text-secondary); font-size: 12.5px;
-}
-.charts-unavailable .chart { display: none; }
-.charts-unavailable .chart-fallback { display: block; }
 
 /* ---------- tables ---------- */
 
@@ -313,9 +316,6 @@ details.tableview summary {
 details.tableview summary:hover { color: var(--text-primary); }
 
 .empty { color: var(--text-muted); font-size: 13px; padding: 10px 0; }
-
-.warnings { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 12.5px; }
-.warnings li { margin-bottom: 4px; }
 
 /* ---------- tooltip ---------- */
 
@@ -414,51 +414,6 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
     </details>
   </section>
 
-  <section class="card">
-    <h2>Where the work sits</h2>
-    <p class="hint">
-      Area is the size of the epic and depth of colour is how much of it is finished, so a large
-      pale block is a lot of untouched work. The quadrant plots the same epics by size against
-      completion &mdash; anything high and to the left needs attention first.
-    </p>
-    <div class="chart-grid">
-      <div>
-        <div class="chart" id="treemap"></div>
-        <div class="chart-fallback">
-          Charts need the ECharts library, which could not be loaded (this report was opened
-          without internet access, or a proxy blocked the CDN). Every number is still available
-          in the bars above and the tables below.
-        </div>
-      </div>
-      <div>
-        <div class="chart" id="quadrant"></div>
-        <div class="chart-fallback">Quadrant chart unavailable &mdash; see the table above.</div>
-      </div>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Stalled work <span id="stalled-count" class="badge stalled" hidden></span></h2>
-    <p class="hint" id="stalled-hint"></p>
-    <div class="scroll-x">
-      <table class="data" id="stalled-table">
-        <thead>
-          <tr>
-            <th>Issue</th><th>Summary</th><th>Epic</th>
-            <th>Status</th><th>Assignee</th><th class="num">Days idle</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p class="empty" id="stalled-empty" hidden>Nothing in progress has gone stale. </p>
-  </section>
-
-  <section class="card" id="warnings-card" hidden>
-    <h2>Worth knowing</h2>
-    <ul class="warnings" id="warnings"></ul>
-  </section>
-
   <footer class="foot" id="footer"></footer>
 </div>
 
@@ -467,10 +422,6 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 <!-- The analysis payload. The console app replaces the marker below with JSON; left as-is the
      page renders an empty state, so the template can be opened directly while editing it. -->
 <script type="application/json" id="jiraviz-data">/*__JIRAVIZ_DATA__*/</script>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/6.1.0/echarts.min.js"
-        integrity="sha512-Uyq/AgtqFM4vT+unIGTDr4wMJDTUK9O5w2PXMQeBCSR8koqHpVz+qBmcQ+9Oeo5H+EmvT4pp/5QrsqhIbyjHTQ=="
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 <script>
 (function () {
@@ -631,6 +582,36 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
       "</div>";
   }
 
+  // Everyone involved in a story: its own assignee first, then every subtask assignee,
+  // de-duplicated. Work at this level is rarely one person's, and showing only the story
+  // assignee hides who is actually doing it.
+  function peopleOn(story) {
+    var seen = Object.create(null);
+    var names = [];
+
+    [story.assignee].concat(story.subtasks.map(function (s) { return s.assignee; }))
+      .forEach(function (name) {
+        if (!name || seen[name]) return;
+        seen[name] = true;
+        names.push(name);
+      });
+
+    return names;
+  }
+
+  function peopleHtml(story) {
+    var names = peopleOn(story);
+    if (names.length === 0) return "";
+
+    // Past two names the column would only truncate, so summarise the tail instead.
+    // The full list stays available on hover.
+    var shown = names.length <= 2
+      ? names.join(", ")
+      : names[0] + ", " + names[1] + " +" + (names.length - 2);
+
+    return '<span class="who" title="' + esc(names.join(", ")) + '">' + esc(shown) + "</span>";
+  }
+
   function storyHtml(story, index) {
     var hasSubtasks = story.subtasks.length > 0;
     var doneCount = story.subtasks.filter(function (s) { return s.bucket === "Done"; }).length;
@@ -649,7 +630,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
           '<span class="who" style="flex:none;font-size:11.5px">' + esc(meta) + '</span>' +
         "</span>" +
         "<span>" + statusChip(story.bucket, story.status) + "</span>" +
-        '<span class="who">' + esc(story.assignee || "") + "</span>" +
+        peopleHtml(story) +
         '<span class="pct">' + pct(story.completion) + "</span>" +
       "</div>" +
       '<div class="subtasks">' + story.subtasks.map(subtaskHtml).join("") + "</div>" +
@@ -844,262 +825,20 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
       "</tr>";
   }).join("");
 
-  var stalledBody = document.querySelector("#stalled-table tbody");
-  document.getElementById("stalled-hint").textContent =
-    "In-progress work with no update for " + DATA.stalledDays + " days or more, oldest first.";
-
-  if (DATA.stalled.length === 0) {
-    document.getElementById("stalled-table").hidden = true;
-    document.getElementById("stalled-empty").hidden = false;
-  } else {
-    var countBadge = document.getElementById("stalled-count");
-    countBadge.hidden = false;
-    countBadge.innerHTML = '<span class="dot"></span>' + DATA.stalled.length;
-
-    stalledBody.innerHTML = DATA.stalled.map(function (issue) {
-      return "<tr>" +
-        "<td>" + issueLink(issue.key) + "</td>" +
-        "<td>" + esc(issue.summary) + "</td>" +
-        "<td>" + esc(issue.epicSummary || "&mdash;") + "</td>" +
-        "<td>" + esc(issue.status) + "</td>" +
-        "<td>" + esc(issue.assignee || "Unassigned") + "</td>" +
-        '<td class="num">' + issue.daysSinceUpdate + "</td>" +
-        "</tr>";
-    }).join("");
-  }
-
-  if (DATA.warnings.length > 0) {
-    document.getElementById("warnings-card").hidden = false;
-    document.getElementById("warnings").innerHTML = DATA.warnings.map(function (w) {
-      return "<li>" + esc(w) + "</li>";
-    }).join("");
-  }
-
   document.getElementById("footer").innerHTML =
     "JiraViz &middot; " + DATA.totals.issueCount + " issues from " + esc(DATA.jiraBaseUrl);
 
   // ---- theme ----------------------------------------------------------------
 
-  var themeButton = document.getElementById("theme-toggle");
-  themeButton.addEventListener("click", function () {
-    var current = document.documentElement.getAttribute("data-theme");
-    if (!current) {
-      var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      current = prefersDark ? "dark" : "light";
-    }
-    var next = current === "dark" ? "light" : "dark";
+  // The head script always stamps data-theme (dark unless a light choice was saved),
+  // so the toggle is a straight flip with no OS-preference guesswork.
+  document.getElementById("theme-toggle").addEventListener("click", function () {
+    var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", next);
     try { localStorage.setItem("jiraviz-theme", next); } catch (err) { /* private mode */ }
-    drawCharts();
   });
-
-  try {
-    var saved = localStorage.getItem("jiraviz-theme");
-    if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
-  } catch (err) { /* storage unavailable; fall back to the OS setting */ }
 
   render();
-
-  // ---- charts ---------------------------------------------------------------
-
-  // Both charts reuse the report's single blue hue: the treemap as a sequential
-  // ramp over completion, the quadrant as the same ramp on its dots, so "more ink
-  // means more finished" holds everywhere on the page.
-  var RAMP_LIGHT = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
-  var RAMP_DARK  = ["#0d366b", "#184f95", "#256abf", "#3987e5", "#6da7ec", "#9ec5f4", "#cde2fb"];
-
-  var charts = [];
-
-  function cssVar(name) {
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  }
-
-  function isDark() {
-    var stamped = document.documentElement.getAttribute("data-theme");
-    if (stamped) return stamped === "dark";
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  }
-
-  // Picks black or white ink for a tile from the tile colour itself, so a light
-  // ramp step in dark mode does not end up with white text on near-white blue.
-  function inkOn(hex) {
-    var r = parseInt(hex.slice(1, 3), 16) / 255;
-    var g = parseInt(hex.slice(3, 5), 16) / 255;
-    var b = parseInt(hex.slice(5, 7), 16) / 255;
-    var lin = function (c) { return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
-    var luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-    return luminance > 0.42 ? "#0b0b0b" : "#ffffff";
-  }
-
-  function rampColor(completion, dark) {
-    var ramp = dark ? RAMP_DARK : RAMP_LIGHT;
-    var index = Math.min(ramp.length - 1, Math.max(0, Math.round(completion * (ramp.length - 1))));
-    return ramp[index];
-  }
-
-  function drawCharts() {
-    if (typeof window.echarts === "undefined") {
-      Array.prototype.forEach.call(document.querySelectorAll(".chart-grid"), function (grid) {
-        grid.classList.add("charts-unavailable");
-      });
-      return;
-    }
-
-    charts.forEach(function (chart) { chart.dispose(); });
-    charts = [];
-
-    var dark = isDark();
-    var ink = cssVar("--text-primary");
-    var muted = cssVar("--text-muted");
-    var grid = cssVar("--gridline");
-    var surface = cssVar("--surface");
-
-    var sized = DATA.epics.filter(function (e) { return e.size > 0; });
-
-    // -- treemap: area = size, depth of colour = completion ------------------
-    var treemap = echarts.init(document.getElementById("treemap"), null, { renderer: "canvas" });
-    treemap.setOption({
-      backgroundColor: "transparent",
-      title: {
-        text: "Size and completion by epic",
-        subtext: "Area = " + (DATA.countBasedSizing ? "issues" : "story points") + ", darker = more finished",
-        left: 0, top: 0,
-        textStyle: { color: ink, fontSize: 13, fontWeight: 600, fontFamily: cssVar("--font") },
-        subtextStyle: { color: muted, fontSize: 11.5, fontFamily: cssVar("--font") }
-      },
-      tooltip: {
-        backgroundColor: surface, borderColor: cssVar("--baseline"), borderWidth: 1,
-        textStyle: { color: ink, fontSize: 12.5, fontFamily: cssVar("--font") },
-        formatter: function (info) {
-          var d = info.data;
-          return "<strong>" + esc(d.name) + "</strong><br>" +
-            num(d.value) + " " + d.unit + " &middot; " + pct(d.completion) + " complete<br>" +
-            d.stories + " stories" + (d.atRisk ? " &middot; at risk" : "");
-        }
-      },
-      series: [{
-        type: "treemap",
-        roam: false,
-        nodeClick: false,
-        breadcrumb: { show: false },
-        top: 52, left: 0, right: 0, bottom: 4,
-        itemStyle: { borderColor: surface, borderWidth: 2, gapWidth: 2 },
-        label: {
-          show: true, color: "#ffffff", fontSize: 11.5, fontFamily: cssVar("--font"),
-          overflow: "truncate",
-          formatter: function (info) { return info.data.short; }
-        },
-        // Small tiles get no label rather than a clipped one.
-        upperLabel: { show: false },
-        data: sized.map(function (epic) {
-          return {
-            name: epic.summary,
-            short: epic.summary + "  " + pct(epic.completion),
-            unit: unitFor(epic),
-            value: epic.size,
-            completion: epic.completion,
-            stories: epic.stories.length,
-            atRisk: epic.atRisk,
-            itemStyle: { color: rampColor(epic.completion, dark) },
-            label: { color: inkOn(rampColor(epic.completion, dark)) }
-          };
-        })
-      }]
-    });
-    charts.push(treemap);
-
-    // -- quadrant: size against completion -----------------------------------
-    var medianSize = (function () {
-      var values = sized.map(function (e) { return e.size; }).sort(function (a, b) { return a - b; });
-      if (!values.length) return 0;
-      var mid = Math.floor(values.length / 2);
-      return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
-    })();
-
-    var quadrant = echarts.init(document.getElementById("quadrant"), null, { renderer: "canvas" });
-    quadrant.setOption({
-      backgroundColor: "transparent",
-      title: {
-        text: "Risk quadrant",
-        subtext: "Height is " + (DATA.countBasedSizing ? "issues" : "story points") + " — large and barely started sits top-left",
-        left: 0, top: 0,
-        textStyle: { color: ink, fontSize: 13, fontWeight: 600, fontFamily: cssVar("--font") },
-        subtextStyle: { color: muted, fontSize: 11.5, fontFamily: cssVar("--font") }
-      },
-      grid: { top: 74, left: 8, right: 22, bottom: 34, containLabel: true },
-      tooltip: {
-        backgroundColor: surface, borderColor: cssVar("--baseline"), borderWidth: 1,
-        textStyle: { color: ink, fontSize: 12.5, fontFamily: cssVar("--font") },
-        formatter: function (p) {
-          return "<strong>" + esc(p.data.name) + "</strong><br>" +
-            pct(p.data.value[0] / 100) + " complete &middot; " + size(p.data.value[1]);
-        }
-      },
-      xAxis: {
-        type: "value", min: 0, max: 100,
-        name: "Complete", nameLocation: "middle", nameGap: 26,
-        nameTextStyle: { color: muted, fontSize: 11.5, fontFamily: cssVar("--font") },
-        axisLabel: { color: muted, fontSize: 11, formatter: "{value}%" },
-        axisLine: { lineStyle: { color: cssVar("--baseline") } },
-        splitLine: { lineStyle: { color: grid, width: 1 } }
-      },
-      yAxis: {
-        type: "value", min: 0,
-        // The unit lives in the subtitle rather than on the axis: ECharts reserves no room
-        // for a rotated axis name once containLabel is on, so it renders clipped or not at all.
-        axisLabel: { color: muted, fontSize: 11 },
-        axisLine: { show: false },
-        splitLine: { lineStyle: { color: grid, width: 1 } }
-      },
-      series: [{
-        type: "scatter",
-        symbolSize: function (value) { return Math.max(10, Math.min(34, 9 + Math.sqrt(value[1]) * 2.2)); },
-        itemStyle: {
-          borderColor: surface,   // 2px surface ring keeps overlapping dots separable
-          borderWidth: 2
-        },
-        label: {
-          show: true, position: "right", distance: 7,
-          color: cssVar("--text-secondary"), fontSize: 11, fontFamily: cssVar("--font"),
-          // Only the risky corner is labelled; labelling every dot would be noise.
-          formatter: function (p) { return p.data.atRisk ? p.data.short : ""; }
-        },
-        // Drops any label that would collide, rather than stacking them illegibly.
-        labelLayout: { hideOverlap: true },
-        markLine: {
-          silent: true, symbol: "none",
-          lineStyle: { color: cssVar("--baseline"), type: "dashed", width: 1 },
-          label: { show: false },
-          data: [{ xAxis: 25 }, { yAxis: medianSize }]
-        },
-        data: sized.map(function (epic) {
-          return {
-            name: epic.summary,
-            short: epic.summary.length > 26 ? epic.summary.slice(0, 25) + "…" : epic.summary,
-            atRisk: epic.atRisk,
-            value: [Math.round(epic.completion * 1000) / 10, epic.size],
-            itemStyle: { color: rampColor(epic.completion, dark), borderColor: surface, borderWidth: 2 }
-          };
-        })
-      }]
-    });
-    charts.push(quadrant);
-  }
-
-  drawCharts();
-
-  var resizeTimer = null;
-  window.addEventListener("resize", function () {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function () {
-      charts.forEach(function (chart) { chart.resize(); });
-    }, 120);
-  });
-
-  // Following the OS theme when the viewer has not made an explicit choice.
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
-    if (!document.documentElement.getAttribute("data-theme")) drawCharts();
-  });
 })();
 </script>
 </body>
