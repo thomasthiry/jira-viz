@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>JiraViz.Cli</RootNamespace>
+    <AssemblyName>JiraViz.Cli</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\JiraViz.Core\JiraViz.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Copied beside the binary so the template can be tweaked and the CLI re-run without a
+         rebuild; the copy takes precedence over the embedded resource. -->
+    <None Include="..\JiraViz.Core\Assets\report.template.html"
+          Link="Assets\report.template.html" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

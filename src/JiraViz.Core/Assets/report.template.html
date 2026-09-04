@@ -1,0 +1,1106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jira portfolio status</title>
+<style>
+/* ---------------------------------------------------------------------------
+   Design tokens.
+
+   Progress is encoded as a single-hue ordinal blue ramp: pale = to do, mid =
+   in progress, deep = done. One hue keeps the whole report readable for
+   colour-blind viewers, and "more ink = more finished" needs no legend lookup.
+   Red and amber are reserved for status badges (at risk, stalled), which always
+   ship with an icon and a word so colour never carries meaning on its own.
+   --------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  --plane:          #f9f9f7;
+  --surface:        #fcfcfb;
+  --surface-sunken: #f2f1ed;
+  --text-primary:   #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted:     #898781;
+  --gridline:       #e1e0d9;
+  --baseline:       #c3c2b7;
+  --border:         rgba(11, 11, 11, 0.10);
+
+  /* Ordinal progress ramp (validated: one hue, monotone L, light end 2.06:1) */
+  --todo:        #86b6ef;
+  --inprogress:  #2a78d6;
+  --done:        #104281;
+
+  /* Status - fixed, never themed. Always paired with an icon + label. */
+  --critical: #d03b3b;
+  --warning:  #fab219;
+  --good:     #0ca30c;
+
+  --track: #eceae4;
+
+  --radius: 10px;
+  --mark-radius: 4px;
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --plane:          #0d0d0d;
+    --surface:        #1a1a19;
+    --surface-sunken: #131312;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255, 255, 255, 0.10);
+    --todo:        #184f95;
+    --inprogress:  #3987e5;
+    --done:        #9ec5f4;
+    --track: #232322;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --plane:          #0d0d0d;
+  --surface:        #1a1a19;
+  --surface-sunken: #131312;
+  --text-primary:   #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted:     #898781;
+  --gridline:       #2c2c2a;
+  --baseline:       #383835;
+  --border:         rgba(255, 255, 255, 0.10);
+  --todo:        #184f95;
+  --inprogress:  #3987e5;
+  --done:        #9ec5f4;
+  --track: #232322;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--text-primary);
+  font: 14px/1.5 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1440px; margin: 0 auto; padding: 24px 20px 72px; }
+
+/* ---------- header ---------- */
+
+header.top {
+  display: flex; flex-wrap: wrap; gap: 16px;
+  align-items: flex-start; justify-content: space-between;
+  margin-bottom: 20px;
+}
+header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
+.subtitle { color: var(--text-secondary); font-size: 13px; margin: 0; }
+.subtitle code {
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--surface-sunken); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px;
+}
+
+.btn {
+  font: inherit; font-size: 13px; color: var(--text-secondary);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 11px; cursor: pointer;
+}
+.btn:hover { color: var(--text-primary); border-color: var(--baseline); }
+.btn[aria-pressed="true"] { color: var(--text-primary); border-color: var(--inprogress); }
+
+/* ---------- KPI strip ---------- */
+
+.kpis {
+  display: grid; gap: 12px; margin-bottom: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.kpi {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.kpi .label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); margin-bottom: 6px;
+}
+.kpi .value { font-size: 26px; font-weight: 640; line-height: 1.1; letter-spacing: -0.02em; }
+.kpi .note { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+.kpi.hero .value { font-size: 38px; }
+
+/* The hero tile carries a miniature of the same stacked bar used below, so the
+   headline number and the detail rows are visibly the same measurement. */
+.kpi.hero .minibar { margin-top: 10px; }
+
+/* ---------- cards & controls ---------- */
+
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 18px; margin-bottom: 20px;
+}
+.card > h2 {
+  margin: 0 0 2px; font-size: 15px; font-weight: 620; letter-spacing: -0.01em;
+}
+.card > .hint { margin: 0 0 14px; font-size: 12.5px; color: var(--text-secondary); }
+
+.controls {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  margin-bottom: 14px;
+}
+.controls input[type="search"], .controls select {
+  font: inherit; font-size: 13px; color: var(--text-primary);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; min-width: 150px;
+}
+.controls input[type="search"] { min-width: 220px; flex: 1 1 220px; max-width: 360px; }
+.controls label { font-size: 12.5px; color: var(--text-secondary); }
+
+/* ---------- legend ---------- */
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.legend .item { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); }
+.swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+.swatch.done { background: var(--done); }
+.swatch.inprogress { background: var(--inprogress); }
+.swatch.todo { background: var(--todo); }
+
+/* ---------- stacked progress bar ---------- */
+
+.track {
+  background: var(--track); border-radius: var(--mark-radius);
+  height: 18px; overflow: hidden;
+}
+.bar {
+  display: flex; height: 100%; gap: 2px;      /* 2px surface gap between fills */
+  border-radius: var(--mark-radius); overflow: hidden;
+}
+.seg { height: 100%; min-width: 0; }
+.seg.done { background: var(--done); }
+.seg.inprogress { background: var(--inprogress); }
+.seg.todo { background: var(--todo); }
+.bar .seg:first-child { border-top-left-radius: var(--mark-radius); border-bottom-left-radius: var(--mark-radius); }
+.bar .seg:last-child { border-top-right-radius: var(--mark-radius); border-bottom-right-radius: var(--mark-radius); }
+
+.minibar .track { height: 10px; }
+
+/* ---------- epic rows ---------- */
+
+.epic { border-top: 1px solid var(--gridline); }
+.epic:first-child { border-top: 0; }
+
+.epic-head {
+  display: grid; align-items: center; gap: 14px;
+  grid-template-columns: 18px minmax(200px, 2.2fr) minmax(140px, 3fr) 62px 78px;
+  padding: 10px 6px; cursor: pointer; border: 0; width: 100%;
+  background: none; color: inherit; font: inherit; text-align: left;
+}
+.epic-head:hover { background: var(--surface-sunken); }
+.epic-head:focus-visible { outline: 2px solid var(--inprogress); outline-offset: -2px; }
+
+.chev { color: var(--text-muted); transition: transform 0.12s ease; font-size: 11px; }
+.epic.open .chev { transform: rotate(90deg); }
+
+.epic-name { min-width: 0; }
+.epic-name .key {
+  font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-muted);
+}
+.epic-name .summary {
+  display: block; font-weight: 560; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+.pct { font-weight: 620; text-align: right; font-variant-numeric: tabular-nums; }
+.size { color: var(--text-secondary); text-align: right; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+
+/* The bar cell is scaled by epic size when that mode is on, so a large untouched
+   epic is physically the longest pale bar on the page. */
+.barcell { min-width: 0; }
+.barcell .scaler { transition: width 0.2s ease; }
+
+/* ---------- badges ---------- */
+
+.badges { display: inline-flex; flex-wrap: wrap; gap: 5px; vertical-align: middle; margin-left: 6px; }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 560; letter-spacing: 0.01em;
+  padding: 1px 6px 1px 5px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text-secondary);
+  background: var(--surface-sunken); white-space: nowrap;
+}
+.badge .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.badge.risk .dot { background: var(--critical); }
+.badge.stalled .dot { background: var(--warning); }
+.badge.unestimated .dot { background: var(--text-muted); }
+.badge.complete .dot { background: var(--good); }
+
+/* ---------- expanded detail ---------- */
+
+.detail { display: none; padding: 2px 6px 14px 32px; }
+.epic.open .detail { display: block; }
+
+.story { border-top: 1px solid var(--gridline); }
+.story-head {
+  display: grid; align-items: center; gap: 12px;
+  grid-template-columns: 14px minmax(180px, 2.4fr) minmax(90px, 1.4fr) 96px 52px;
+  padding: 7px 4px; width: 100%; border: 0; background: none;
+  color: inherit; font: inherit; text-align: left; cursor: default;
+}
+.story-head.expandable { cursor: pointer; }
+.story-head.expandable:hover { background: var(--surface-sunken); }
+.story-head:focus-visible { outline: 2px solid var(--inprogress); outline-offset: -2px; }
+
+.story .title { min-width: 0; display: flex; align-items: baseline; gap: 7px; }
+.story .title .summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+a.key {
+  font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--inprogress); text-decoration: none; flex: none;
+}
+a.key:hover { text-decoration: underline; }
+
+.status-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: var(--text-secondary); white-space: nowrap;
+}
+.subtasks { padding: 2px 0 8px 26px; display: none; }
+.story.open .subtasks { display: block; }
+.subtask {
+  display: grid; align-items: center; gap: 12px;
+  grid-template-columns: minmax(160px, 2.4fr) minmax(90px, 1.2fr) 96px;
+  padding: 4px 4px; font-size: 12.5px; color: var(--text-secondary);
+  border-top: 1px solid var(--gridline);
+}
+.subtask .title { min-width: 0; display: flex; align-items: baseline; gap: 7px; }
+.subtask .summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who { color: var(--text-muted); font-size: 12px; text-align: right; white-space: nowrap;
+       overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- charts ---------- */
+
+.chart-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+.chart { height: 340px; width: 100%; }
+.chart-fallback {
+  display: none; padding: 12px; border: 1px dashed var(--baseline);
+  border-radius: 8px; color: var(--text-secondary); font-size: 12.5px;
+}
+.charts-unavailable .chart { display: none; }
+.charts-unavailable .chart-fallback { display: block; }
+
+/* ---------- tables ---------- */
+
+table.data { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.data th {
+  text-align: left; font-weight: 560; color: var(--text-muted);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 0 10px 7px 0; border-bottom: 1px solid var(--baseline); white-space: nowrap;
+}
+table.data td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--gridline); vertical-align: top; }
+table.data td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.data tr:hover td { background: var(--surface-sunken); }
+.scroll-x { overflow-x: auto; }
+
+details.tableview { margin-top: 4px; }
+details.tableview summary {
+  cursor: pointer; font-size: 12.5px; color: var(--text-secondary);
+  padding: 6px 0; list-style: revert;
+}
+details.tableview summary:hover { color: var(--text-primary); }
+
+.empty { color: var(--text-muted); font-size: 13px; padding: 10px 0; }
+
+.warnings { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 12.5px; }
+.warnings li { margin-bottom: 4px; }
+
+/* ---------- tooltip ---------- */
+
+#tip {
+  position: fixed; z-index: 50; pointer-events: none; opacity: 0;
+  transition: opacity 0.1s ease; max-width: 300px;
+  background: var(--surface); color: var(--text-primary);
+  border: 1px solid var(--baseline); border-radius: 8px;
+  padding: 9px 11px; font-size: 12.5px; line-height: 1.45;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16);
+}
+#tip.on { opacity: 1; }
+#tip .t-title { font-weight: 600; margin-bottom: 5px; }
+#tip .t-row { display: flex; align-items: center; gap: 7px; justify-content: space-between; }
+#tip .t-row .lhs { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+#tip .t-row .rhs { font-variant-numeric: tabular-nums; }
+
+footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 28px; }
+
+@media (max-width: 720px) {
+  .epic-head { grid-template-columns: 16px 1fr 56px; }
+  .epic-head .barcell { grid-column: 2 / -1; }
+  .epic-head .size { display: none; }
+  .story-head { grid-template-columns: 12px 1fr 60px; }
+  .story-head .status-chip, .story-head .who { display: none; }
+  .subtask { grid-template-columns: 1fr auto; }
+  .subtask .who { display: none; }
+}
+
+@media print {
+  body { background: #fff; }
+  .controls, .btn, #tip { display: none !important; }
+  .card, .kpi { break-inside: avoid; border-color: #ccc; }
+  .detail { display: block !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>Jira portfolio status</h1>
+      <p class="subtitle">
+        <span id="meta-scope"></span>
+      </p>
+    </div>
+    <button class="btn" id="theme-toggle" type="button" title="Switch between light and dark">Theme</button>
+  </header>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="card">
+    <h2>Epics by progress</h2>
+    <p class="hint" id="hero-hint"></p>
+
+    <div class="controls">
+      <input type="search" id="filter" placeholder="Filter epics, stories and subtasks..." aria-label="Filter issues">
+      <label for="sort">Sort</label>
+      <select id="sort">
+        <option value="completion">Least complete first</option>
+        <option value="completion-desc">Most complete first</option>
+        <option value="size">Largest first</option>
+        <option value="stalled">Most stalled first</option>
+        <option value="key">By key</option>
+      </select>
+      <button class="btn" id="scale-toggle" type="button" aria-pressed="true"
+              title="Scale each bar's length by the size of the epic">Scale bars by size</button>
+      <button class="btn" id="expand-all" type="button">Expand all</button>
+      <button class="btn" id="collapse-all" type="button">Collapse all</button>
+    </div>
+
+    <div class="controls legend" id="legend">
+      <span class="item"><span class="swatch done"></span>Done</span>
+      <span class="item"><span class="swatch inprogress"></span>In progress</span>
+      <span class="item"><span class="swatch todo"></span>To do</span>
+    </div>
+
+    <div id="epics"></div>
+    <p class="empty" id="epics-empty" hidden>Nothing matches that filter.</p>
+
+    <details class="tableview">
+      <summary>View as a table</summary>
+      <div class="scroll-x">
+        <table class="data" id="epic-table">
+          <thead>
+            <tr>
+              <th>Epic</th><th>Summary</th><th>Status</th>
+              <th class="num">Size</th><th class="num">Done</th>
+              <th class="num">In progress</th><th class="num">To do</th><th class="num">Complete</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>Where the work sits</h2>
+    <p class="hint">
+      Area is the size of the epic and depth of colour is how much of it is finished, so a large
+      pale block is a lot of untouched work. The quadrant plots the same epics by size against
+      completion &mdash; anything high and to the left needs attention first.
+    </p>
+    <div class="chart-grid">
+      <div>
+        <div class="chart" id="treemap"></div>
+        <div class="chart-fallback">
+          Charts need the ECharts library, which could not be loaded (this report was opened
+          without internet access, or a proxy blocked the CDN). Every number is still available
+          in the bars above and the tables below.
+        </div>
+      </div>
+      <div>
+        <div class="chart" id="quadrant"></div>
+        <div class="chart-fallback">Quadrant chart unavailable &mdash; see the table above.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Stalled work <span id="stalled-count" class="badge stalled" hidden></span></h2>
+    <p class="hint" id="stalled-hint"></p>
+    <div class="scroll-x">
+      <table class="data" id="stalled-table">
+        <thead>
+          <tr>
+            <th>Issue</th><th>Summary</th><th>Epic</th>
+            <th>Status</th><th>Assignee</th><th class="num">Days idle</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="empty" id="stalled-empty" hidden>Nothing in progress has gone stale. </p>
+  </section>
+
+  <section class="card" id="warnings-card" hidden>
+    <h2>Worth knowing</h2>
+    <ul class="warnings" id="warnings"></ul>
+  </section>
+
+  <footer class="foot" id="footer"></footer>
+</div>
+
+<div id="tip" role="tooltip" aria-hidden="true"></div>
+
+<!-- The analysis payload. The console app replaces the marker below with JSON; left as-is the
+     page renders an empty state, so the template can be opened directly while editing it. -->
+<script type="application/json" id="jiraviz-data">/*__JIRAVIZ_DATA__*/</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/6.1.0/echarts.min.js"
+        integrity="sha512-Uyq/AgtqFM4vT+unIGTDr4wMJDTUK9O5w2PXMQeBCSR8koqHpVz+qBmcQ+9Oeo5H+EmvT4pp/5QrsqhIbyjHTQ=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- data -----------------------------------------------------------------
+
+  var DATA = null;
+  try {
+    var raw = document.getElementById("jiraviz-data").textContent.trim();
+    if (raw && raw.charAt(0) === "{") DATA = JSON.parse(raw);
+  } catch (err) {
+    console.error("Could not parse the embedded report data.", err);
+  }
+
+  if (!DATA) {
+    document.querySelector(".wrap").innerHTML =
+      "<h1>Jira portfolio status</h1><p>This is the report template. Run the JiraViz " +
+      "console app to produce a report with data in it.</p>";
+    return;
+  }
+
+  var BUCKETS = ["Done", "InProgress", "NotStarted"];
+  var BUCKET_CLASS = { Done: "done", InProgress: "inprogress", NotStarted: "todo" };
+  var BUCKET_LABEL = { Done: "Done", InProgress: "In progress", NotStarted: "To do" };
+
+  // ---- small helpers --------------------------------------------------------
+
+  function esc(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+
+  function pct(value) { return Math.round(value * 100) + "%"; }
+
+  function num(value) {
+    var rounded = Math.round(value * 10) / 10;
+    return String(rounded);
+  }
+
+  var UNIT = DATA.countBasedSizing ? "issues" : "pts";
+  function size(value) { return num(value) + " " + UNIT; }
+
+  // An epic where nobody estimated is sized by counting its issues, so it must not claim to be
+  // measured in points merely because other epics in the report were.
+  function unitFor(epic) { return epic.unestimated ? "issues" : UNIT; }
+  function sizeOf(epic, value) { return num(value) + " " + unitFor(epic); }
+
+  function browseUrl(key) { return DATA.jiraBaseUrl + "/browse/" + encodeURIComponent(key); }
+
+  function issueLink(key) {
+    return '<a class="key" href="' + esc(browseUrl(key)) + '" target="_blank" rel="noopener">' +
+      esc(key) + "</a>";
+  }
+
+  function statusChip(bucket, statusName) {
+    return '<span class="status-chip"><span class="swatch ' + BUCKET_CLASS[bucket] + '"></span>' +
+      esc(statusName || BUCKET_LABEL[bucket]) + "</span>";
+  }
+
+  function formatDate(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+
+  function daysSince(iso) {
+    if (!iso) return null;
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return Math.floor((Date.now() - d.getTime()) / 86400000);
+  }
+
+  // ---- stacked bar ----------------------------------------------------------
+
+  // Segments are emitted only when non-zero, so the 2px gaps never appear as
+  // stray slivers on an epic that is entirely in one bucket.
+  function barHtml(parts, total) {
+    if (!(total > 0)) return '<div class="track"></div>';
+
+    var segments = "";
+    BUCKETS.forEach(function (bucket) {
+      var value = parts[bucket] || 0;
+      if (value <= 0) return;
+      var share = (value / total) * 100;
+      segments += '<div class="seg ' + BUCKET_CLASS[bucket] + '" style="width:' +
+        share.toFixed(4) + '%"></div>';
+    });
+
+    return '<div class="track"><div class="bar">' + segments + "</div></div>";
+  }
+
+  // ---- header & KPIs --------------------------------------------------------
+
+  var t = DATA.totals;
+
+  document.getElementById("meta-scope").innerHTML =
+    "<code>" + esc(DATA.jql) + "</code> &middot; generated " + esc(formatDate(DATA.generatedAt)) +
+    " &middot; sized by " + (DATA.countBasedSizing ? "issue count" : "story points");
+
+  document.getElementById("hero-hint").textContent = DATA.countBasedSizing
+    ? "No story points were found, so every issue counts as one. Bar length is the number of issues in the epic."
+    : "Bar length is the size of the epic and the fill is how much of it is finished. Stories earn partial credit from their subtasks.";
+
+  var kpiHtml = "";
+
+  kpiHtml += '<div class="kpi hero"><div class="label">Overall complete</div>' +
+    '<div class="value">' + pct(t.completion) + "</div>" +
+    '<div class="note">' + size(t.doneSize) + " of " + size(t.size) + "</div>" +
+    '<div class="minibar">' + barHtml(
+      { Done: t.doneSize, InProgress: t.inProgressSize, NotStarted: t.notStartedSize }, t.size) +
+    "</div></div>";
+
+  kpiHtml += '<div class="kpi"><div class="label">Epics</div>' +
+    '<div class="value">' + t.epicCount + "</div>" +
+    '<div class="note">' + t.epicsDone + " finished &middot; " + t.issueCount + " issues in scope</div></div>";
+
+  kpiHtml += '<div class="kpi"><div class="label">Not started</div>' +
+    '<div class="value">' + t.epicsNotStarted + "</div>" +
+    '<div class="note">epic' + (t.epicsNotStarted === 1 ? "" : "s") + " with no work finished</div></div>";
+
+  kpiHtml += '<div class="kpi"><div class="label">Stalled</div>' +
+    '<div class="value">' + t.stalledCount + "</div>" +
+    '<div class="note">in progress, untouched ' + DATA.stalledDays + "+ days</div></div>";
+
+  document.getElementById("kpis").innerHTML = kpiHtml;
+
+  // ---- epic list ------------------------------------------------------------
+
+  var maxSize = DATA.epics.reduce(function (acc, e) { return Math.max(acc, e.size); }, 0) || 1;
+  var scaleBars = true;
+  var epicsEl = document.getElementById("epics");
+
+  function badgesHtml(epic) {
+    var out = "";
+    if (epic.atRisk) out += '<span class="badge risk"><span class="dot"></span>At risk</span>';
+    if (epic.notStarted && epic.size > 0 && !epic.atRisk)
+      out += '<span class="badge risk"><span class="dot"></span>Not started</span>';
+    if (epic.completion >= 0.999 && epic.size > 0)
+      out += '<span class="badge complete"><span class="dot"></span>Complete</span>';
+    if (epic.stalledCount > 0)
+      out += '<span class="badge stalled"><span class="dot"></span>' + epic.stalledCount + " stalled</span>";
+    if (epic.unestimated)
+      out += '<span class="badge unestimated"><span class="dot"></span>Unestimated</span>';
+    return out ? '<span class="badges">' + out + "</span>" : "";
+  }
+
+  function subtaskHtml(subtask) {
+    return '<div class="subtask">' +
+      '<div class="title">' + issueLink(subtask.key) +
+        '<span class="summary">' + esc(subtask.summary) + "</span></div>" +
+      "<div>" + statusChip(subtask.bucket, subtask.status) +
+        (subtask.stalled ? ' <span class="badge stalled"><span class="dot"></span>stalled</span>' : "") +
+      "</div>" +
+      '<div class="who">' + esc(subtask.assignee || "") + "</div>" +
+      "</div>";
+  }
+
+  function storyHtml(story, index) {
+    var hasSubtasks = story.subtasks.length > 0;
+    var doneCount = story.subtasks.filter(function (s) { return s.bucket === "Done"; }).length;
+
+    var meta = hasSubtasks
+      ? doneCount + " of " + story.subtasks.length + " subtasks done"
+      : (story.points != null ? num(story.points) + " " + UNIT : "unestimated");
+
+    return '<div class="story" data-story="' + index + '">' +
+      '<div class="story-head' + (hasSubtasks ? " expandable" : "") + '"' +
+        (hasSubtasks ? ' role="button" tabindex="0" aria-expanded="false"' : "") + ">" +
+        '<span class="chev">' + (hasSubtasks ? "&#9656;" : "") + "</span>" +
+        '<span class="title">' + issueLink(story.key) +
+          '<span class="summary">' + esc(story.summary) + "</span>" +
+          (story.stalled ? String.fromCharCode(32) + "<span class=\"badge stalled\"><span class=\"dot\"></span>stalled</span>" : "") +
+          '<span class="who" style="flex:none;font-size:11.5px">' + esc(meta) + '</span>' +
+        "</span>" +
+        "<span>" + statusChip(story.bucket, story.status) + "</span>" +
+        '<span class="who">' + esc(story.assignee || "") + "</span>" +
+        '<span class="pct">' + pct(story.completion) + "</span>" +
+      "</div>" +
+      '<div class="subtasks">' + story.subtasks.map(subtaskHtml).join("") + "</div>" +
+      "</div>";
+  }
+
+  function epicHtml(epic, index) {
+    var widthPct = scaleBars ? Math.max((epic.size / maxSize) * 100, 2) : 100;
+    var parts = { Done: epic.doneSize, InProgress: epic.inProgressSize, NotStarted: epic.notStartedSize };
+
+    return '<div class="epic" data-epic="' + index + '">' +
+      '<div class="epic-head" role="button" tabindex="0" aria-expanded="false">' +
+        '<span class="chev">&#9656;</span>' +
+        '<span class="epic-name">' +
+          '<span class="key">' + esc(epic.isSynthetic ? "" : epic.key) + "</span>" +
+          badgesHtml(epic) +
+          '<span class="summary">' + esc(epic.summary) + "</span>" +
+        "</span>" +
+        '<span class="barcell" data-tip="' + index + '">' +
+          '<span class="scaler" style="display:block;width:' + widthPct.toFixed(2) + '%">' +
+            barHtml(parts, epic.size) +
+          "</span>" +
+        "</span>" +
+        '<span class="pct">' + pct(epic.completion) + "</span>" +
+        '<span class="size">' + sizeOf(epic, epic.size) + "</span>" +
+      "</div>" +
+      '<div class="detail">' + epic.stories.map(storyHtml).join("") +
+        (epic.stories.length === 0 ? '<p class="empty">No stories in this epic.</p>' : "") +
+      "</div></div>";
+  }
+
+  // ---- filtering & sorting --------------------------------------------------
+
+  var filterText = "";
+  var sortMode = "completion";
+
+  function matches(epic) {
+    if (!filterText) return true;
+    var needle = filterText.toLowerCase();
+
+    if ((epic.key + " " + epic.summary).toLowerCase().indexOf(needle) !== -1) return true;
+
+    return epic.stories.some(function (story) {
+      if ((story.key + " " + story.summary).toLowerCase().indexOf(needle) !== -1) return true;
+      return story.subtasks.some(function (subtask) {
+        return (subtask.key + " " + subtask.summary).toLowerCase().indexOf(needle) !== -1;
+      });
+    });
+  }
+
+  var SORTERS = {
+    "completion": function (a, b) { return a.completion - b.completion || b.size - a.size; },
+    "completion-desc": function (a, b) { return b.completion - a.completion || b.size - a.size; },
+    "size": function (a, b) { return b.size - a.size; },
+    "stalled": function (a, b) { return b.stalledCount - a.stalledCount || a.completion - b.completion; },
+    "key": function (a, b) { return a.key.localeCompare(b.key, undefined, { numeric: true }); }
+  };
+
+  // Rendering rebuilds the list wholesale, which keeps sort and filter honest;
+  // open rows are restored by key so expanding an epic then sorting is not jarring.
+  var openEpics = Object.create(null);
+
+  function render() {
+    var visible = DATA.epics.filter(matches).slice().sort(SORTERS[sortMode]);
+
+    epicsEl.innerHTML = visible.map(function (epic) {
+      return epicHtml(epic, DATA.epics.indexOf(epic));
+    }).join("");
+
+    document.getElementById("epics-empty").hidden = visible.length > 0;
+
+    Array.prototype.forEach.call(epicsEl.querySelectorAll(".epic"), function (node) {
+      var epic = DATA.epics[Number(node.dataset.epic)];
+      if (openEpics[epic.key]) {
+        node.classList.add("open");
+        node.querySelector(".epic-head").setAttribute("aria-expanded", "true");
+      }
+    });
+  }
+
+  // ---- interaction ----------------------------------------------------------
+
+  function toggleEpic(node) {
+    var epic = DATA.epics[Number(node.dataset.epic)];
+    var isOpen = node.classList.toggle("open");
+    openEpics[epic.key] = isOpen;
+    node.querySelector(".epic-head").setAttribute("aria-expanded", isOpen ? "true" : "false");
+  }
+
+  epicsEl.addEventListener("click", function (event) {
+    // Issue keys are real links; let them through rather than toggling the row.
+    if (event.target.closest("a")) return;
+
+    var storyHead = event.target.closest(".story-head.expandable");
+    if (storyHead) {
+      var story = storyHead.parentNode;
+      var open = story.classList.toggle("open");
+      storyHead.setAttribute("aria-expanded", open ? "true" : "false");
+      return;
+    }
+
+    var epicHead = event.target.closest(".epic-head");
+    if (epicHead) toggleEpic(epicHead.parentNode);
+  });
+
+  epicsEl.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    var head = event.target.closest(".epic-head, .story-head.expandable");
+    if (!head) return;
+    event.preventDefault();
+    head.click();
+  });
+
+  document.getElementById("filter").addEventListener("input", function (event) {
+    filterText = event.target.value.trim();
+    render();
+  });
+
+  document.getElementById("sort").addEventListener("change", function (event) {
+    sortMode = event.target.value;
+    render();
+  });
+
+  document.getElementById("scale-toggle").addEventListener("click", function (event) {
+    scaleBars = !scaleBars;
+    event.currentTarget.setAttribute("aria-pressed", scaleBars ? "true" : "false");
+    render();
+  });
+
+  document.getElementById("expand-all").addEventListener("click", function () {
+    DATA.epics.forEach(function (epic) { openEpics[epic.key] = true; });
+    render();
+  });
+
+  document.getElementById("collapse-all").addEventListener("click", function () {
+    openEpics = Object.create(null);
+    render();
+  });
+
+  // ---- tooltip --------------------------------------------------------------
+
+  var tip = document.getElementById("tip");
+
+  function tipRow(bucket, value, total, unit) {
+    return '<div class="t-row"><span class="lhs"><span class="swatch ' + BUCKET_CLASS[bucket] +
+      '"></span>' + BUCKET_LABEL[bucket] + '</span><span class="rhs">' + (num(value) + " " + unit) +
+      " &middot; " + (total > 0 ? pct(value / total) : "0%") + "</span></div>";
+  }
+
+  epicsEl.addEventListener("mouseover", function (event) {
+    var cell = event.target.closest(".barcell");
+    if (!cell) return;
+
+    var epic = DATA.epics[Number(cell.dataset.tip)];
+    tip.innerHTML = '<div class="t-title">' + esc(epic.summary) + "</div>" +
+      tipRow("Done", epic.doneSize, epic.size, unitFor(epic)) +
+      tipRow("InProgress", epic.inProgressSize, epic.size, unitFor(epic)) +
+      tipRow("NotStarted", epic.notStartedSize, epic.size, unitFor(epic)) +
+      '<div class="t-row" style="margin-top:5px"><span class="lhs">' + epic.stories.length +
+      " stories</span><span class=\"rhs\">" + sizeOf(epic, epic.size) + "</span></div>";
+    tip.classList.add("on");
+    tip.setAttribute("aria-hidden", "false");
+  });
+
+  epicsEl.addEventListener("mouseout", function (event) {
+    if (!event.target.closest(".barcell")) return;
+    tip.classList.remove("on");
+    tip.setAttribute("aria-hidden", "true");
+  });
+
+  document.addEventListener("mousemove", function (event) {
+    if (!tip.classList.contains("on")) return;
+    var pad = 14;
+    var x = Math.min(event.clientX + pad, window.innerWidth - tip.offsetWidth - 8);
+    var y = Math.min(event.clientY + pad, window.innerHeight - tip.offsetHeight - 8);
+    tip.style.left = Math.max(8, x) + "px";
+    tip.style.top = Math.max(8, y) + "px";
+  });
+
+  // ---- tables ---------------------------------------------------------------
+
+  document.querySelector("#epic-table tbody").innerHTML = DATA.epics.map(function (epic) {
+    return "<tr>" +
+      "<td>" + (epic.isSynthetic ? "&mdash;" : issueLink(epic.key)) + "</td>" +
+      "<td>" + esc(epic.summary) + "</td>" +
+      "<td>" + esc(epic.isSynthetic ? "" : epic.status) + "</td>" +
+      '<td class="num">' + num(epic.size) + "</td>" +
+      '<td class="num">' + num(epic.doneSize) + "</td>" +
+      '<td class="num">' + num(epic.inProgressSize) + "</td>" +
+      '<td class="num">' + num(epic.notStartedSize) + "</td>" +
+      '<td class="num">' + pct(epic.completion) + "</td>" +
+      "</tr>";
+  }).join("");
+
+  var stalledBody = document.querySelector("#stalled-table tbody");
+  document.getElementById("stalled-hint").textContent =
+    "In-progress work with no update for " + DATA.stalledDays + " days or more, oldest first.";
+
+  if (DATA.stalled.length === 0) {
+    document.getElementById("stalled-table").hidden = true;
+    document.getElementById("stalled-empty").hidden = false;
+  } else {
+    var countBadge = document.getElementById("stalled-count");
+    countBadge.hidden = false;
+    countBadge.innerHTML = '<span class="dot"></span>' + DATA.stalled.length;
+
+    stalledBody.innerHTML = DATA.stalled.map(function (issue) {
+      return "<tr>" +
+        "<td>" + issueLink(issue.key) + "</td>" +
+        "<td>" + esc(issue.summary) + "</td>" +
+        "<td>" + esc(issue.epicSummary || "&mdash;") + "</td>" +
+        "<td>" + esc(issue.status) + "</td>" +
+        "<td>" + esc(issue.assignee || "Unassigned") + "</td>" +
+        '<td class="num">' + issue.daysSinceUpdate + "</td>" +
+        "</tr>";
+    }).join("");
+  }
+
+  if (DATA.warnings.length > 0) {
+    document.getElementById("warnings-card").hidden = false;
+    document.getElementById("warnings").innerHTML = DATA.warnings.map(function (w) {
+      return "<li>" + esc(w) + "</li>";
+    }).join("");
+  }
+
+  document.getElementById("footer").innerHTML =
+    "JiraViz &middot; " + DATA.totals.issueCount + " issues from " + esc(DATA.jiraBaseUrl);
+
+  // ---- theme ----------------------------------------------------------------
+
+  var themeButton = document.getElementById("theme-toggle");
+  themeButton.addEventListener("click", function () {
+    var current = document.documentElement.getAttribute("data-theme");
+    if (!current) {
+      var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      current = prefersDark ? "dark" : "light";
+    }
+    var next = current === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("jiraviz-theme", next); } catch (err) { /* private mode */ }
+    drawCharts();
+  });
+
+  try {
+    var saved = localStorage.getItem("jiraviz-theme");
+    if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
+  } catch (err) { /* storage unavailable; fall back to the OS setting */ }
+
+  render();
+
+  // ---- charts ---------------------------------------------------------------
+
+  // Both charts reuse the report's single blue hue: the treemap as a sequential
+  // ramp over completion, the quadrant as the same ramp on its dots, so "more ink
+  // means more finished" holds everywhere on the page.
+  var RAMP_LIGHT = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+  var RAMP_DARK  = ["#0d366b", "#184f95", "#256abf", "#3987e5", "#6da7ec", "#9ec5f4", "#cde2fb"];
+
+  var charts = [];
+
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function isDark() {
+    var stamped = document.documentElement.getAttribute("data-theme");
+    if (stamped) return stamped === "dark";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  // Picks black or white ink for a tile from the tile colour itself, so a light
+  // ramp step in dark mode does not end up with white text on near-white blue.
+  function inkOn(hex) {
+    var r = parseInt(hex.slice(1, 3), 16) / 255;
+    var g = parseInt(hex.slice(3, 5), 16) / 255;
+    var b = parseInt(hex.slice(5, 7), 16) / 255;
+    var lin = function (c) { return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    var luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    return luminance > 0.42 ? "#0b0b0b" : "#ffffff";
+  }
+
+  function rampColor(completion, dark) {
+    var ramp = dark ? RAMP_DARK : RAMP_LIGHT;
+    var index = Math.min(ramp.length - 1, Math.max(0, Math.round(completion * (ramp.length - 1))));
+    return ramp[index];
+  }
+
+  function drawCharts() {
+    if (typeof window.echarts === "undefined") {
+      Array.prototype.forEach.call(document.querySelectorAll(".chart-grid"), function (grid) {
+        grid.classList.add("charts-unavailable");
+      });
+      return;
+    }
+
+    charts.forEach(function (chart) { chart.dispose(); });
+    charts = [];
+
+    var dark = isDark();
+    var ink = cssVar("--text-primary");
+    var muted = cssVar("--text-muted");
+    var grid = cssVar("--gridline");
+    var surface = cssVar("--surface");
+
+    var sized = DATA.epics.filter(function (e) { return e.size > 0; });
+
+    // -- treemap: area = size, depth of colour = completion ------------------
+    var treemap = echarts.init(document.getElementById("treemap"), null, { renderer: "canvas" });
+    treemap.setOption({
+      backgroundColor: "transparent",
+      title: {
+        text: "Size and completion by epic",
+        subtext: "Area = " + (DATA.countBasedSizing ? "issues" : "story points") + ", darker = more finished",
+        left: 0, top: 0,
+        textStyle: { color: ink, fontSize: 13, fontWeight: 600, fontFamily: cssVar("--font") },
+        subtextStyle: { color: muted, fontSize: 11.5, fontFamily: cssVar("--font") }
+      },
+      tooltip: {
+        backgroundColor: surface, borderColor: cssVar("--baseline"), borderWidth: 1,
+        textStyle: { color: ink, fontSize: 12.5, fontFamily: cssVar("--font") },
+        formatter: function (info) {
+          var d = info.data;
+          return "<strong>" + esc(d.name) + "</strong><br>" +
+            num(d.value) + " " + d.unit + " &middot; " + pct(d.completion) + " complete<br>" +
+            d.stories + " stories" + (d.atRisk ? " &middot; at risk" : "");
+        }
+      },
+      series: [{
+        type: "treemap",
+        roam: false,
+        nodeClick: false,
+        breadcrumb: { show: false },
+        top: 52, left: 0, right: 0, bottom: 4,
+        itemStyle: { borderColor: surface, borderWidth: 2, gapWidth: 2 },
+        label: {
+          show: true, color: "#ffffff", fontSize: 11.5, fontFamily: cssVar("--font"),
+          overflow: "truncate",
+          formatter: function (info) { return info.data.short; }
+        },
+        // Small tiles get no label rather than a clipped one.
+        upperLabel: { show: false },
+        data: sized.map(function (epic) {
+          return {
+            name: epic.summary,
+            short: epic.summary + "  " + pct(epic.completion),
+            unit: unitFor(epic),
+            value: epic.size,
+            completion: epic.completion,
+            stories: epic.stories.length,
+            atRisk: epic.atRisk,
+            itemStyle: { color: rampColor(epic.completion, dark) },
+            label: { color: inkOn(rampColor(epic.completion, dark)) }
+          };
+        })
+      }]
+    });
+    charts.push(treemap);
+
+    // -- quadrant: size against completion -----------------------------------
+    var medianSize = (function () {
+      var values = sized.map(function (e) { return e.size; }).sort(function (a, b) { return a - b; });
+      if (!values.length) return 0;
+      var mid = Math.floor(values.length / 2);
+      return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
+    })();
+
+    var quadrant = echarts.init(document.getElementById("quadrant"), null, { renderer: "canvas" });
+    quadrant.setOption({
+      backgroundColor: "transparent",
+      title: {
+        text: "Risk quadrant",
+        subtext: "Height is " + (DATA.countBasedSizing ? "issues" : "story points") + " — large and barely started sits top-left",
+        left: 0, top: 0,
+        textStyle: { color: ink, fontSize: 13, fontWeight: 600, fontFamily: cssVar("--font") },
+        subtextStyle: { color: muted, fontSize: 11.5, fontFamily: cssVar("--font") }
+      },
+      grid: { top: 74, left: 8, right: 22, bottom: 34, containLabel: true },
+      tooltip: {
+        backgroundColor: surface, borderColor: cssVar("--baseline"), borderWidth: 1,
+        textStyle: { color: ink, fontSize: 12.5, fontFamily: cssVar("--font") },
+        formatter: function (p) {
+          return "<strong>" + esc(p.data.name) + "</strong><br>" +
+            pct(p.data.value[0] / 100) + " complete &middot; " + size(p.data.value[1]);
+        }
+      },
+      xAxis: {
+        type: "value", min: 0, max: 100,
+        name: "Complete", nameLocation: "middle", nameGap: 26,
+        nameTextStyle: { color: muted, fontSize: 11.5, fontFamily: cssVar("--font") },
+        axisLabel: { color: muted, fontSize: 11, formatter: "{value}%" },
+        axisLine: { lineStyle: { color: cssVar("--baseline") } },
+        splitLine: { lineStyle: { color: grid, width: 1 } }
+      },
+      yAxis: {
+        type: "value", min: 0,
+        // The unit lives in the subtitle rather than on the axis: ECharts reserves no room
+        // for a rotated axis name once containLabel is on, so it renders clipped or not at all.
+        axisLabel: { color: muted, fontSize: 11 },
+        axisLine: { show: false },
+        splitLine: { lineStyle: { color: grid, width: 1 } }
+      },
+      series: [{
+        type: "scatter",
+        symbolSize: function (value) { return Math.max(10, Math.min(34, 9 + Math.sqrt(value[1]) * 2.2)); },
+        itemStyle: {
+          borderColor: surface,   // 2px surface ring keeps overlapping dots separable
+          borderWidth: 2
+        },
+        label: {
+          show: true, position: "right", distance: 7,
+          color: cssVar("--text-secondary"), fontSize: 11, fontFamily: cssVar("--font"),
+          // Only the risky corner is labelled; labelling every dot would be noise.
+          formatter: function (p) { return p.data.atRisk ? p.data.short : ""; }
+        },
+        // Drops any label that would collide, rather than stacking them illegibly.
+        labelLayout: { hideOverlap: true },
+        markLine: {
+          silent: true, symbol: "none",
+          lineStyle: { color: cssVar("--baseline"), type: "dashed", width: 1 },
+          label: { show: false },
+          data: [{ xAxis: 25 }, { yAxis: medianSize }]
+        },
+        data: sized.map(function (epic) {
+          return {
+            name: epic.summary,
+            short: epic.summary.length > 26 ? epic.summary.slice(0, 25) + "…" : epic.summary,
+            atRisk: epic.atRisk,
+            value: [Math.round(epic.completion * 1000) / 10, epic.size],
+            itemStyle: { color: rampColor(epic.completion, dark), borderColor: surface, borderWidth: 2 }
+          };
+        })
+      }]
+    });
+    charts.push(quadrant);
+  }
+
+  drawCharts();
+
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      charts.forEach(function (chart) { chart.resize(); });
+    }, 120);
+  });
+
+  // Following the OS theme when the viewer has not made an explicit choice.
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+    if (!document.documentElement.getAttribute("data-theme")) drawCharts();
+  });
+})();
+</script>
+</body>
+</html>

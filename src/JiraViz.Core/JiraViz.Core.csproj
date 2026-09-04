@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>JiraViz.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The template lives with the writer that fills it in, so the library is self-contained
+         and can render a report without the CLI project being present. -->
+    <EmbeddedResource Include="Assets\report.template.html"
+                      LogicalName="JiraViz.Core.Assets.report.template.html" />
+  </ItemGroup>
+
+</Project>

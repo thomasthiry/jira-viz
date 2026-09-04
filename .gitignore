@@ -1,0 +1,14 @@
+# Build output
+bin/
+obj/
+out/
+*.user
+
+# Generated reports
+report.html
+*.report.html
+
+# IDE
+.vs/
+.idea/
+*.suo
