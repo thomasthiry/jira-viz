@@ -8,8 +8,9 @@ underway, and what has not been started at all.
 
 ## What it shows
 
-- **Named views** &mdash; a switcher across the top for milestones or any other slice, each pill
-  carrying its own completion so they can be compared without clicking through them.
+- **Named views** &mdash; a switcher across the top for milestones or any other slice. Each pill
+  carries its own completion as a number *and* as a miniature of the same red/amber/green bar,
+  so which milestone is furthest along is readable without reading any of the figures.
 - **A full-width headline** &mdash; overall completion as a large bar, each segment labelled with
   its share and its points.
 - **A KPI strip** &mdash; epic count, epics with no work finished, stalled issues.
@@ -136,7 +137,8 @@ A report can carry several named views. The `jql` setting is the base scope; eac
 ```
 
 Every view is fetched in one run and embedded in the same file, so switching between them is
-instant and works offline. The base query is always the first view. `sample/demo.settings.json`
+instant and works offline. The base query is always the first view, and each pill shows that
+view's own progress bar so the switcher doubles as a comparison. `sample/demo.settings.json`
 is a working example against the stub server:
 
 ```bash
