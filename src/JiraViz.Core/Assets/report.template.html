@@ -542,12 +542,11 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
   // Per-view state. Reassigned by selectView, so every helper below reads the active view.
   var VIEW, MODEL, t, UNIT, maxSize;
 
-  function size(value) { return num(value) + " " + UNIT; }
+  // A tilde marks any figure that includes a stand-in estimate rather than a real one, so an
+  // imputed total is never mistaken for something the team actually sized.
+  function approx(imputed) { return imputed ? "~" : ""; }
 
-  // An epic where nobody estimated is sized by counting its issues, so it must not claim to be
-  // measured in points merely because other epics in the report were.
-  function unitFor(epic) { return epic.unestimated ? "issues" : UNIT; }
-  function sizeOf(epic, value) { return num(value) + " " + unitFor(epic); }
+  function size(value, imputed) { return approx(imputed) + num(value) + " " + UNIT; }
 
   function browseUrl(key) { return MODEL.jiraBaseUrl + "/browse/" + encodeURIComponent(key); }
 
@@ -617,9 +616,18 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
       "<code>" + esc(VIEW.jql) + "</code> &middot; generated " + esc(formatDate(DATA.generatedAt)) +
       " &middot; sized by " + (MODEL.countBasedSizing ? "issue count" : "story points");
 
-    document.getElementById("hero-hint").textContent = MODEL.countBasedSizing
+    var hint = MODEL.countBasedSizing
       ? "No story points were found, so every issue counts as one. Bar length is the number of issues in the epic."
       : "Bar length is the size of the epic and the fill is how much of it is finished. Stories earn partial credit from their subtasks.";
+
+    // A reader seeing a tilde needs to know where the number came from, so the rule is stated
+    // rather than left to be inferred.
+    if (MODEL.imputedPoints != null && t.hasImputed) {
+      hint += " Stories with no estimate are counted as " + num(MODEL.imputedPoints) + " " + UNIT +
+        ", the project-wide average of the estimated ones; any figure including them is marked ~.";
+    }
+
+    document.getElementById("hero-hint").textContent = hint;
   }
 
   // ---- overall headline -------------------------------------------------------
@@ -641,7 +649,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
       var label = "";
       if (share > 9) {
         label = '<span class="lab"><b>' + Math.round(share) + "%</b>" +
-          "<span>" + BUCKET_LABEL[bucket] + " &middot; " + size(value) + "</span></span>";
+          "<span>" + BUCKET_LABEL[bucket] + " &middot; " + size(value, t.hasImputed) + "</span></span>";
       } else if (share > 2.5) {
         label = '<span class="lab"><b>' + Math.round(share) + "%</b></span>";
       }
@@ -660,7 +668,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
         '<span class="overall-pct">' + pct(t.completion) + "</span>" +
         '<span class="overall-meta">' + (t.issueCount === 0
           ? "Nothing matches this view"
-          : size(t.doneSize) + " of " + size(t.size) + " finished") + "</span>" +
+          : size(t.doneSize, t.hasImputed) + " of " + size(t.size, t.hasImputed) + " finished") + "</span>" +
       "</div>" +
       (t.size > 0 ? overallBarHtml() : '<div class="track" style="height:48px"></div>');
   }
@@ -749,7 +757,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
     var meta = hasSubtasks
       ? doneCount + " of " + story.subtasks.length + " subtasks done"
-      : (story.points != null ? num(story.points) + " " + UNIT : "unestimated");
+      : size(story.size, story.imputed);
 
     return '<div class="story" data-story="' + index + '">' +
       '<div class="story-head' + (hasSubtasks ? " expandable" : "") + '"' +
@@ -789,7 +797,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
           "</span>" +
         "</span>" +
         '<span class="pct">' + pct(epic.completion) + "</span>" +
-        '<span class="size">' + sizeOf(epic, epic.size) + "</span>" +
+        '<span class="size">' + size(epic.size, epic.hasImputed) + "</span>" +
       "</div>" +
       '<div class="detail">' + epic.stories.map(storyHtml).join("") +
         (epic.stories.length === 0 ? '<p class="empty">No stories in this epic.</p>' : "") +
@@ -917,9 +925,9 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
   var tip = document.getElementById("tip");
 
-  function tipRow(bucket, value, total, unit) {
+  function tipRow(bucket, value, total, imputed) {
     return '<div class="t-row"><span class="lhs"><span class="swatch ' + BUCKET_CLASS[bucket] +
-      '"></span>' + BUCKET_LABEL[bucket] + '</span><span class="rhs">' + (num(value) + " " + unit) +
+      '"></span>' + BUCKET_LABEL[bucket] + '</span><span class="rhs">' + size(value, imputed) +
       " &middot; " + (total > 0 ? pct(value / total) : "0%") + "</span></div>";
   }
 
@@ -929,11 +937,11 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
     var epic = MODEL.epics[Number(cell.dataset.tip)];
     tip.innerHTML = '<div class="t-title">' + esc(epic.summary) + "</div>" +
-      tipRow("Done", epic.doneSize, epic.size, unitFor(epic)) +
-      tipRow("InProgress", epic.inProgressSize, epic.size, unitFor(epic)) +
-      tipRow("NotStarted", epic.notStartedSize, epic.size, unitFor(epic)) +
+      tipRow("Done", epic.doneSize, epic.size, epic.hasImputed) +
+      tipRow("InProgress", epic.inProgressSize, epic.size, epic.hasImputed) +
+      tipRow("NotStarted", epic.notStartedSize, epic.size, epic.hasImputed) +
       '<div class="t-row" style="margin-top:5px"><span class="lhs">' + epic.stories.length +
-      " stories</span><span class=\"rhs\">" + sizeOf(epic, epic.size) + "</span></div>";
+      " stories</span><span class=\"rhs\">" + size(epic.size, epic.hasImputed) + "</span></div>";
     tip.classList.add("on");
     tip.setAttribute("aria-hidden", "false");
   });

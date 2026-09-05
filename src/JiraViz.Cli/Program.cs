@@ -46,6 +46,10 @@ try
     var generatedAt = DateTimeOffset.Now;
     var views = new List<ReportView>();
 
+    // Fixed by the first (base) view and reused by the rest, so unestimated work is worth the
+    // same everywhere and the milestone views stay comparable with the whole project.
+    double? sharedImputedPoints = null;
+
     foreach (var (name, jql) in requested)
     {
         Console.WriteLine();
@@ -64,8 +68,15 @@ try
             Console.WriteLine($"  pulled in {issues.Count - matched} ancestor(s) to complete the hierarchy");
 
         var (groups, warnings) = new HierarchyBuilder(options.EpicIssueTypeName).Build(issues);
-        var model = new ProgressCalculator(bucketer, options.StalledDays)
+        var model = new ProgressCalculator(bucketer, options.StalledDays, sharedImputedPoints)
             .Build(groups, warnings, options.BaseUrl, jql, generatedAt);
+
+        if (sharedImputedPoints is null && model.ImputedPoints is not null)
+        {
+            sharedImputedPoints = model.ImputedPoints;
+            Console.WriteLine($"  unestimated stories counted as {model.ImputedPoints:0.#} pts"
+                              + " (project-wide average of the estimated ones)");
+        }
 
         views.Add(new ReportView { Name = name, Jql = jql, Model = model });
 

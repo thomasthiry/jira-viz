@@ -59,7 +59,9 @@ public sealed class ProjectGenerator
             {
                 var storyKey = NextKey();
                 var bucket = PickBucket(bp.Bias);
-                double? points = bp.Pointed ? Fibonacci() : null;
+                // A minority of stories in an otherwise estimated epic carry no points, which is
+                // the mixed case the imputation has to handle.
+                double? points = bp.Pointed && _random.NextDouble() > 0.12 ? Fibonacci() : null;
                 var release = PickRelease();
 
                 Issues.Add(MakeIssue(

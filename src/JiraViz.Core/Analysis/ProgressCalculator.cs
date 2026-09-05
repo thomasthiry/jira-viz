@@ -13,10 +13,23 @@ namespace JiraViz.Core.Analysis;
 /// Completion: a story earns partial credit from its subtasks, which is what makes "almost done"
 /// distinguishable from "just started" without anyone having to move the story itself.
 /// </summary>
-public sealed class ProgressCalculator(StatusBucketer bucketer, int stalledDays)
+public sealed class ProgressCalculator(
+    StatusBucketer bucketer,
+    int stalledDays,
+    double? sharedImputedPoints = null)
 {
     private readonly StatusBucketer _bucketer = bucketer;
     private readonly int _stalledDays = stalledDays;
+
+    /// <summary>
+    /// A stand-in size decided elsewhere, so that every view in a report sizes unestimated work
+    /// identically. Without it each view would average only its own slice and the same story
+    /// could be worth a different amount depending on which milestone you were looking at.
+    /// </summary>
+    private readonly double? _sharedImputedPoints = sharedImputedPoints;
+
+    /// <summary>Stand-in size for unestimated stories; null when nothing in scope was estimated.</summary>
+    private double? _imputedPoints;
 
     /// <summary>Credit given to a story that is in progress but has no subtasks to measure.</summary>
     private const double InProgressCredit = 0.5;
@@ -28,7 +41,16 @@ public sealed class ProgressCalculator(StatusBucketer bucketer, int stalledDays)
         string jql,
         DateTimeOffset now)
     {
-        var countBased = groups.SelectMany(g => g.Stories).All(s => !HasPoints(s.Story));
+        var allStories = groups.SelectMany(g => g.Stories).ToList();
+
+        // Stories with no estimate are sized by the rounded mean of the ones that have one. The
+        // shared value wins when supplied, so a filtered view keeps the project's scale rather
+        // than re-averaging its own narrower slice.
+        _imputedPoints = _sharedImputedPoints
+            ?? (allStories.Any(s => HasPoints(s.Story)) ? ImputedSize(allStories) : null);
+
+        // Nothing estimated and nothing to borrow: fall back to counting issues.
+        var countBased = _imputedPoints is null;
 
         var epics = groups.Select(g => BuildEpic(g, now)).ToList();
 
@@ -60,6 +82,7 @@ public sealed class ProgressCalculator(StatusBucketer bucketer, int stalledDays)
             IssueCount = groups.Sum(g => g.Stories.Count + g.Stories.Sum(s => s.Subtasks.Count))
                          + groups.Count(g => !g.IsSynthetic),
             StalledCount = stalled.Count,
+            HasImputed = epics.Any(e => e.HasImputed),
         };
 
         return new ReportModel
@@ -69,6 +92,7 @@ public sealed class ProgressCalculator(StatusBucketer bucketer, int stalledDays)
             Jql = jql,
             StalledDays = _stalledDays,
             CountBasedSizing = countBased,
+            ImputedPoints = _imputedPoints,
             Totals = totals,
             Epics = epics,
             Stalled = stalled,
@@ -112,6 +136,7 @@ public sealed class ProgressCalculator(StatusBucketer bucketer, int stalledDays)
             InProgressSize = inProgress,
             NotStartedSize = notStarted,
             Unestimated = !anyPointed && group.Stories.Count > 0,
+            HasImputed = stories.Any(s => s.Imputed),
             IsSynthetic = group.IsSynthetic,
             NotStarted = completion <= 0,
             AtRisk = false, // filled in by Reflag, once the median epic size is known
@@ -146,6 +171,7 @@ public sealed class ProgressCalculator(StatusBucketer bucketer, int stalledDays)
             Bucket = bucket,
             IssueType = story.IssueTypeName,
             Size = SizeOf(story),
+            Imputed = !HasPoints(story) && _imputedPoints is not null,
             Completion = completion,
             Points = story.StoryPoints,
             Assignee = story.Assignee,
@@ -209,7 +235,20 @@ public sealed class ProgressCalculator(StatusBucketer bucketer, int stalledDays)
 
     private static bool HasPoints(RawIssue issue) => issue.StoryPoints is > 0;
 
-    private static double SizeOf(RawIssue issue) => HasPoints(issue) ? issue.StoryPoints!.Value : 1.0;
+    /// <summary>
+    /// The rounded mean of the estimated stories, floored at 1 so a portfolio of half-point
+    /// stories cannot impute a size of zero and make unestimated work vanish from the totals.
+    /// </summary>
+    private static double ImputedSize(IEnumerable<StoryGroup> stories)
+    {
+        var pointed = stories.Where(s => HasPoints(s.Story)).Select(s => s.Story.StoryPoints!.Value).ToList();
+        if (pointed.Count == 0) return 1.0;
+
+        return Math.Max(1.0, Math.Round(pointed.Average(), MidpointRounding.AwayFromZero));
+    }
+
+    private double SizeOf(RawIssue issue)
+        => HasPoints(issue) ? issue.StoryPoints!.Value : _imputedPoints ?? 1.0;
 
     /// <summary>Re-stamps the risk flag now that the portfolio-wide median size is known.</summary>
     private static EpicView Reflag(EpicView epic, double medianSize) => new()
@@ -224,6 +263,7 @@ public sealed class ProgressCalculator(StatusBucketer bucketer, int stalledDays)
         InProgressSize = epic.InProgressSize,
         NotStartedSize = epic.NotStartedSize,
         Unestimated = epic.Unestimated,
+        HasImputed = epic.HasImputed,
         IsSynthetic = epic.IsSynthetic,
         NotStarted = epic.NotStarted,
         AtRisk = !epic.IsSynthetic && epic.Size > 0 && epic.Size >= medianSize && epic.Completion < 0.25,

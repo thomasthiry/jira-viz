@@ -84,9 +84,16 @@ The token comes from `JIRAVIZ_TOKEN` (or `--token`), never from `appsettings.jso
 
 ## How size and completion are calculated
 
-- A **story's size** is its story points, falling back to `1` when unpointed, so an epic nobody
-  estimated is still weighted by issue count instead of vanishing. Epics where that fallback was
-  used throughout are badged *Unestimated* and report their size in issues, not points.
+- A **story's size** is its story points. A story with no estimate is given the **rounded mean
+  of the estimated stories**, so an unestimated epic gets a comparable size instead of counting
+  as one point per issue. Epics with no real estimate at all are still badged *Unestimated*.
+- That mean is taken **once, from the base query, and reused by every view**, so unestimated work
+  is worth the same everywhere and milestone views stay comparable with the whole project.
+- **Any figure that includes an imputed estimate is prefixed with a tilde** — `~35 pts` rather
+  than `35 pts` — so a stand-in total is never mistaken for something the team actually sized.
+  The value being used is stated in full under the epic list.
+- If **nothing** in the project carries points there is no mean to take at all, so the report
+  falls back to counting issues and no tilde appears.
 - A **story's completion** is `1` if it is Done; otherwise the fraction of its subtasks that are
   Done; otherwise `0.5` if it is in progress. That partial credit is what separates "almost done"
   from "just started" without anyone having to move the story itself.
