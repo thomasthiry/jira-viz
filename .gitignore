@@ -12,3 +12,5 @@ report.html
 .vs/
 .idea/
 *.suo
+src/JiraViz.Cli/appsettings.prod.json
+crypto-report.html

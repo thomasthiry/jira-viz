@@ -446,8 +446,8 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
       <input type="search" id="filter" placeholder="Filter epics, stories and subtasks..." aria-label="Filter issues">
       <label for="sort">Sort</label>
       <select id="sort" autocomplete="off">
-        <option value="completion">Least complete first</option>
         <option value="completion-desc">Most complete first</option>
+        <option value="completion">Least complete first</option>
         <option value="size">Largest first</option>
         <option value="stalled">Most stalled first</option>
         <option value="key">By key</option>
@@ -613,7 +613,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
   function renderMeta() {
     document.getElementById("meta-scope").innerHTML =
-      "<code>" + esc(VIEW.jql) + "</code> &middot; generated " + esc(formatDate(DATA.generatedAt)) +
+      "<code>" + esc(VIEW.jql) + "</code> <br />generated " + esc(formatDate(DATA.generatedAt)) +
       " &middot; sized by " + (MODEL.countBasedSizing ? "issue count" : "story points");
 
     var hint = MODEL.countBasedSizing
@@ -808,10 +808,10 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
   var filterText = "";
 
-  // Least complete first: the report is about what still needs attention. The select is
+  // Most complete first: the report shows stories chronologically. The select is
   // reset to match, because a browser restoring a previously chosen value would otherwise
   // show one sort while the list used another.
-  var sortMode = "completion";
+  var sortMode = "completion-desc";
   document.getElementById("sort").value = sortMode;
 
   function matches(epic) {
