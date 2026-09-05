@@ -8,6 +8,7 @@ public sealed class ReportModel
     public required string Jql { get; init; }
     public required int StalledDays { get; init; }
 
+
     /// <summary>True when no story points were found anywhere, so sizing is count-based throughout.</summary>
     public required bool CountBasedSizing { get; init; }
 

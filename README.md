@@ -8,11 +8,14 @@ underway, and what has not been started at all.
 
 ## What it shows
 
-- **A KPI strip** &mdash; overall completion, epic count, epics with no work finished, stalled issues.
-- **Epic progress bars** &mdash; one row per epic, stacked Done / In progress / To do in
-  green / amber / red. Bar length is the *size* of the epic, so a large untouched epic is the
-  longest, reddest bar on the page. Rows expand in place to their stories, and stories to their
-  subtasks.
+- **A full-width headline** &mdash; overall completion as a large bar spanning the whole window,
+  each segment labelled with its share and its points.
+- **A KPI strip** &mdash; epic count, epics with no work finished, stalled issues.
+- **Epic progress bars** &mdash; one row per epic, 30px tall, stacked Done / In progress / To do
+  in green / amber / red. Bar length is proportional to the epic workload, so a large untouched
+  epic is the longest, reddest bar on the page; bars below 12 per cent of the widest are floored
+  so their split stays readable. Segment values are printed inside the bar where they fit. Rows
+  expand in place to their stories, and stories to their subtasks.
 - **Badges** &mdash; *At risk*, *Not started*, *Stalled*, *Unestimated*, *Complete*.
 - **People** &mdash; a story row lists everyone on it: its own assignee plus every subtask
   assignee, de-duplicated, with the full list on hover.

@@ -129,6 +129,44 @@ header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spaci
 .btn:hover { color: var(--text-primary); border-color: var(--baseline); }
 .btn[aria-pressed="true"] { color: var(--text-primary); border-color: var(--baseline); background: var(--surface-sunken); }
 
+
+/* ---------- overall progress headline ----------
+   The widest block on the page and the first thing read, but aligned with the cards below it
+   rather than bleeding to the window edges. */
+.overall {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px 18px;
+  margin-bottom: 20px;
+}
+.overall-head {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 13px;
+}
+.overall-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text-muted); font-weight: 600;
+}
+.overall-pct {
+  font-size: 46px; font-weight: 660; letter-spacing: -0.03em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.overall-meta {
+  margin-left: auto; text-align: right; color: var(--text-secondary);
+  font-size: 13px; font-variant-numeric: tabular-nums;
+}
+.overall .track, .overall .bar { border-radius: 6px; }
+.overall .seg .lab {
+  flex-direction: column; gap: 1px; padding: 0 6px;
+  font-size: 12px; font-weight: 500; line-height: 1.25;
+  overflow: hidden; white-space: nowrap;
+}
+.overall .seg .lab b { font-size: 15.5px; font-weight: 680; }
+
+@media (max-width: 620px) {
+  .overall-pct { font-size: 36px; }
+  .overall-meta { margin-left: 0; text-align: left; width: 100%; }
+}
 /* ---------- KPI strip ---------- */
 
 .kpis {
@@ -145,11 +183,6 @@ header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spaci
 }
 .kpi .value { font-size: 26px; font-weight: 640; line-height: 1.1; letter-spacing: -0.02em; }
 .kpi .note { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
-.kpi.hero .value { font-size: 38px; }
-
-/* The hero tile carries a miniature of the same stacked bar used below, so the
-   headline number and the detail rows are visibly the same measurement. */
-.kpi.hero .minibar { margin-top: 10px; }
 
 /* ---------- cards & controls ---------- */
 
@@ -200,7 +233,6 @@ header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spaci
 .bar .seg:first-child { border-top-left-radius: var(--mark-radius); border-bottom-left-radius: var(--mark-radius); }
 .bar .seg:last-child { border-top-right-radius: var(--mark-radius); border-bottom-right-radius: var(--mark-radius); }
 
-.minibar .track { height: 10px; }
 
 /* ---------- epic rows ---------- */
 
@@ -209,10 +241,20 @@ header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spaci
 
 .epic-head {
   display: grid; align-items: center; gap: 14px;
-  grid-template-columns: 18px minmax(200px, 2.2fr) minmax(140px, 3fr) 62px 78px;
+  grid-template-columns: 18px minmax(190px, 1.5fr) minmax(260px, 3fr) 58px 78px;
   padding: 10px 6px; cursor: pointer; border: 0; width: 100%;
   background: none; color: inherit; font: inherit; text-align: left;
 }
+
+/* Values printed inside a segment, shown only where there is room for them. */
+.seg { position: relative; }
+.seg .lab {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.seg.done .lab, .seg.todo .lab { color: rgba(255, 255, 255, 0.95); }
+.seg.inprogress .lab { color: rgba(0, 0, 0, 0.8); }
 .epic-head:hover { background: var(--surface-sunken); }
 .epic-head:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
 
@@ -229,7 +271,7 @@ header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spaci
   overflow: hidden; text-overflow: ellipsis;
 }
 
-.pct { font-weight: 620; text-align: right; font-variant-numeric: tabular-nums; }
+.pct { font-weight: 620; font-size: 15.5px; text-align: right; font-variant-numeric: tabular-nums; }
 .size { color: var(--text-secondary); text-align: right; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 
 /* The bar cell is scaled by epic size when that mode is on, so a large untouched
@@ -366,6 +408,9 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
     <button class="btn" id="theme-toggle" type="button" title="Switch between light and dark">Theme</button>
   </header>
 
+  <!-- The headline: the widest block on the page, aligned with the cards below it. -->
+  <section class="overall" id="overall"></section>
+
   <section class="kpis" id="kpis"></section>
 
   <section class="card">
@@ -497,23 +542,41 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
     return Math.floor((Date.now() - d.getTime()) / 86400000);
   }
 
-  // ---- stacked bar ----------------------------------------------------------
+  // ---- progress bars ---------------------------------------------------------
+
+  var maxSize = DATA.epics.reduce(function (acc, e) { return Math.max(acc, e.size); }, 0) || 1;
+
+  // The bar is the main object on the page, so it is drawn tall enough to carry values inside it.
+  var EPIC_BAR_HEIGHT = 30;
+
+  // Bar length is proportional to the epic's workload. Below this floor a bar is too short to
+  // read its own split, so the smallest epics stop shrinking; everything above stays linear.
+  var MIN_BAR_WIDTH_PCT = 12;
 
   // Segments are emitted only when non-zero, so the 2px gaps never appear as
   // stray slivers on an epic that is entirely in one bucket.
-  function barHtml(parts, total) {
-    if (!(total > 0)) return '<div class="track"></div>';
+  function barHtml(parts, total, height) {
+    if (!(total > 0)) return '<div class="track" style="height:' + (height || 20) + 'px"></div>';
 
     var segments = "";
     BUCKETS.forEach(function (bucket) {
       var value = parts[bucket] || 0;
       if (value <= 0) return;
+
       var share = (value / total) * 100;
+
+      // A value is printed inside a segment only where it genuinely fits: a narrow sliver
+      // or a shallow bar would clip it, which reads worse than no label at all.
+      var label = (share > 12 && height >= 20)
+        ? '<span class="lab">' + num(value) + "</span>"
+        : "";
+
       segments += '<div class="seg ' + BUCKET_CLASS[bucket] + '" style="width:' +
-        share.toFixed(4) + '%"></div>';
+        share.toFixed(4) + '%">' + label + "</div>";
     });
 
-    return '<div class="track"><div class="bar">' + segments + "</div></div>";
+    return '<div class="track" style="height:' + height + 'px"><div class="bar">' +
+      segments + "</div></div>";
   }
 
   // ---- header & KPIs --------------------------------------------------------
@@ -528,14 +591,46 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
     ? "No story points were found, so every issue counts as one. Bar length is the number of issues in the epic."
     : "Bar length is the size of the epic and the fill is how much of it is finished. Stories earn partial credit from their subtasks.";
 
-  var kpiHtml = "";
+  // ---- overall headline -------------------------------------------------------
 
-  kpiHtml += '<div class="kpi hero"><div class="label">Overall complete</div>' +
-    '<div class="value">' + pct(t.completion) + "</div>" +
-    '<div class="note">' + size(t.doneSize) + " of " + size(t.size) + "</div>" +
-    '<div class="minibar">' + barHtml(
-      { Done: t.doneSize, InProgress: t.inProgressSize, NotStarted: t.notStartedSize }, t.size) +
-    "</div></div>";
+  // Its own renderer rather than the shared bar: at this size each segment can carry its own
+  // share and value, which is the whole split of the project in one glance.
+  function overallBarHtml() {
+    var parts = { Done: t.doneSize, InProgress: t.inProgressSize, NotStarted: t.notStartedSize };
+    var segments = "";
+
+    BUCKETS.forEach(function (bucket) {
+      var value = parts[bucket] || 0;
+      if (value <= 0) return;
+
+      var share = (value / t.size) * 100;
+
+      // Wide segments carry their name and value; narrow ones keep just the share, so a thin
+      // sliver is still explained rather than left as an unlabelled band of colour.
+      var label = "";
+      if (share > 9) {
+        label = '<span class="lab"><b>' + Math.round(share) + "%</b>" +
+          "<span>" + BUCKET_LABEL[bucket] + " &middot; " + size(value) + "</span></span>";
+      } else if (share > 2.5) {
+        label = '<span class="lab"><b>' + Math.round(share) + "%</b></span>";
+      }
+
+      segments += '<div class="seg ' + BUCKET_CLASS[bucket] + '" style="width:' +
+        share.toFixed(3) + '%">' + label + "</div>";
+    });
+
+    return '<div class="track" style="height:48px"><div class="bar">' + segments + "</div></div>";
+  }
+
+  document.getElementById("overall").innerHTML =
+    '<div class="overall-head">' +
+      '<span class="overall-label">Overall complete</span>' +
+      '<span class="overall-pct">' + pct(t.completion) + "</span>" +
+      '<span class="overall-meta">' + size(t.doneSize) + " of " + size(t.size) + " finished</span>" +
+    "</div>" +
+    (t.size > 0 ? overallBarHtml() : '<div class="track" style="height:48px"></div>');
+
+  var kpiHtml = "";
 
   kpiHtml += '<div class="kpi"><div class="label">Epics</div>' +
     '<div class="value">' + t.epicCount + "</div>" +
@@ -553,9 +648,8 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
   // ---- epic list ------------------------------------------------------------
 
-  var maxSize = DATA.epics.reduce(function (acc, e) { return Math.max(acc, e.size); }, 0) || 1;
-  var scaleBars = true;
   var epicsEl = document.getElementById("epics");
+  var scaleBars = true;
 
   function badgesHtml(epic) {
     var out = "";
@@ -638,7 +732,10 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
   }
 
   function epicHtml(epic, index) {
-    var widthPct = scaleBars ? Math.max((epic.size / maxSize) * 100, 2) : 100;
+    // Only the baseline treatment spends bar length on epic size; the others are full width.
+    var widthPct = scaleBars
+      ? Math.max((epic.size / maxSize) * 100, MIN_BAR_WIDTH_PCT)
+      : 100;
     var parts = { Done: epic.doneSize, InProgress: epic.inProgressSize, NotStarted: epic.notStartedSize };
 
     return '<div class="epic" data-epic="' + index + '">' +
@@ -651,7 +748,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
         "</span>" +
         '<span class="barcell" data-tip="' + index + '">' +
           '<span class="scaler" style="display:block;width:' + widthPct.toFixed(2) + '%">' +
-            barHtml(parts, epic.size) +
+            barHtml(parts, epic.size, EPIC_BAR_HEIGHT) +
           "</span>" +
         "</span>" +
         '<span class="pct">' + pct(epic.completion) + "</span>" +

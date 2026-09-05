@@ -3,6 +3,7 @@ using JiraViz.Cli;
 using JiraViz.Core;
 using JiraViz.Core.Analysis;
 using JiraViz.Core.Jira;
+using JiraViz.Core.Model;
 using JiraViz.Core.Reporting;
 
 if (args.Contains("--help") || args.Contains("-h") || args.Length == 0)
@@ -50,6 +51,7 @@ try
 
     var (groups, warnings) = new HierarchyBuilder(options.EpicIssueTypeName).Build(issues);
     var bucketer = new StatusBucketer(options.StatusOverrides);
+
     var model = new ProgressCalculator(bucketer, options.StalledDays)
         .Build(groups, warnings, options.BaseUrl, options.Jql, DateTimeOffset.Now);
 
@@ -115,3 +117,4 @@ internal sealed class SynchronousProgress<T>(Action<T> handler) : IProgress<T>
 {
     public void Report(T value) => handler(value);
 }
+
