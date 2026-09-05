@@ -115,6 +115,9 @@ header.top {
 }
 header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
 .subtitle { color: var(--text-secondary); font-size: 13px; margin: 0; }
+
+/* The query that produced the report: provenance, so it sits at the foot of the page. */
+.meta-scope { text-align: center; color: var(--text-muted); font-size: 12px; margin: 26px 0 6px; }
 .subtitle code {
   font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   background: var(--surface-sunken); border: 1px solid var(--border);
@@ -425,12 +428,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 <div class="wrap">
 
   <header class="top">
-    <div>
-      <h1 id="project-name">Jira portfolio status</h1>
-      <p class="subtitle">
-        <span id="meta-scope"></span>
-      </p>
-    </div>
+    <h1 id="project-name">Jira portfolio status</h1>
     <button class="btn" id="theme-toggle" type="button" title="Switch between light and dark">Theme</button>
   </header>
 
@@ -447,7 +445,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
     <div class="controls">
       <input type="search" id="filter" placeholder="Filter epics, stories and subtasks..." aria-label="Filter issues">
       <label for="sort">Sort</label>
-      <select id="sort">
+      <select id="sort" autocomplete="off">
         <option value="completion">Least complete first</option>
         <option value="completion-desc">Most complete first</option>
         <option value="size">Largest first</option>
@@ -488,6 +486,9 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
   <!-- Secondary counts: the bars answer the question, these qualify the answer. -->
   <section class="kpis" id="kpis"></section>
+
+  <!-- Provenance rather than headline: which query produced this, kept out of the way. -->
+  <p class="subtitle meta-scope" id="meta-scope"></p>
 
   <footer class="foot" id="footer"></footer>
 </div>
@@ -798,7 +799,12 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
   // ---- filtering & sorting --------------------------------------------------
 
   var filterText = "";
+
+  // Least complete first: the report is about what still needs attention. The select is
+  // reset to match, because a browser restoring a previously chosen value would otherwise
+  // show one sort while the list used another.
   var sortMode = "completion";
+  document.getElementById("sort").value = sortMode;
 
   function matches(epic) {
     if (!filterText) return true;
