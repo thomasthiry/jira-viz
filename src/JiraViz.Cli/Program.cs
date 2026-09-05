@@ -37,38 +37,77 @@ try
     Report("Story Points", options.StoryPointsFieldName, fields.StoryPointsFieldId);
     Report("Epic Link", options.EpicLinkFieldName, fields.EpicLinkFieldId);
 
-    Console.WriteLine($"Fetching issues for: {options.Jql}");
-    // A plain synchronous IProgress, so the last callback cannot land after the summary line.
-    var progress = new SynchronousProgress<int>(count => Console.Write($"\r  fetched {count} issues ..."));
-    var issues = await client.SearchAsync(options.Jql, fields, progress, ct);
-    Console.WriteLine($"\r  fetched {issues.Count} issues.   ");
+    // The base query is always the first view; the configured ones layer onto it.
+    var requested = new List<(string Name, string Jql)> { (options.DefaultViewName.Trim(), options.Jql) };
+    foreach (var v in options.Views)
+        requested.Add((v.Name.Trim(), JqlComposer.Compose(options.Jql, v.Jql)));
 
-    if (issues.Count == 0)
+    var bucketer = new StatusBucketer(options.StatusOverrides);
+    var generatedAt = DateTimeOffset.Now;
+    var views = new List<ReportView>();
+
+    foreach (var (name, jql) in requested)
     {
-        Console.Error.WriteLine("The JQL matched no issues, so there is nothing to report.");
+        Console.WriteLine();
+        Console.WriteLine($"[{name}] {jql}");
+
+        // A plain synchronous IProgress, so the last callback cannot land after the summary line.
+        var progress = new SynchronousProgress<int>(c => Console.Write($"\r  fetched {c} issues ..."));
+        var issues = (IReadOnlyList<RawIssue>)await client.SearchAsync(jql, fields, progress, ct);
+        Console.WriteLine($"\r  fetched {issues.Count} issues.   ");
+
+        // A filtered view returns stories without their epics, so the hierarchy is completed
+        // before analysis; otherwise every story falls into the synthetic "(no epic)" bucket.
+        var matched = issues.Count;
+        issues = await HierarchyCompleter.CompleteAsync(client, fields, issues, ct);
+        if (issues.Count > matched)
+            Console.WriteLine($"  pulled in {issues.Count - matched} ancestor(s) to complete the hierarchy");
+
+        var (groups, warnings) = new HierarchyBuilder(options.EpicIssueTypeName).Build(issues);
+        var model = new ProgressCalculator(bucketer, options.StalledDays)
+            .Build(groups, warnings, options.BaseUrl, jql, generatedAt);
+
+        views.Add(new ReportView { Name = name, Jql = jql, Model = model });
+
+        // An empty view is reported, not fatal: a milestone with no open work left is a good
+        // outcome, and it must not take the other views down with it.
+        if (issues.Count == 0)
+        {
+            Console.WriteLine("  (nothing matches this view)");
+            continue;
+        }
+
+        Console.WriteLine($"  {model.Totals.EpicCount} epics, {model.Totals.IssueCount} issues, "
+                          + $"{model.Totals.Completion * 100:0}% complete "
+                          + $"({model.Totals.DoneSize:0.#} of {model.Totals.Size:0.#}"
+                          + $" {(model.CountBasedSizing ? "issues" : "pts")})");
+        Console.WriteLine($"  {model.Totals.EpicsNotStarted} epic(s) not started, "
+                          + $"{model.Totals.StalledCount} stalled issue(s)");
+
+        foreach (var warning in model.Warnings) Console.WriteLine($"  ! {warning}");
+    }
+
+    if (views.All(v => v.Model.Totals.IssueCount == 0))
+    {
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("No view matched any issues, so there is nothing to report.");
         return 2;
     }
 
-    var (groups, warnings) = new HierarchyBuilder(options.EpicIssueTypeName).Build(issues);
-    var bucketer = new StatusBucketer(options.StatusOverrides);
+    var document = new ReportDocument
+    {
+        ProjectName = options.ProjectName,
+        GeneratedAt = generatedAt,
+        Views = views,
+    };
 
-    var model = new ProgressCalculator(bucketer, options.StalledDays)
-        .Build(groups, warnings, options.BaseUrl, options.Jql, DateTimeOffset.Now);
-
-    await ReportWriter.WriteAsync(model, options.OutputPath, ct);
+    await ReportWriter.WriteAsync(document, options.OutputPath, ct);
     var fullPath = Path.GetFullPath(options.OutputPath);
 
     stopwatch.Stop();
     Console.WriteLine();
-    Console.WriteLine($"  {model.Totals.EpicCount} epics, {model.Totals.IssueCount} issues");
-    Console.WriteLine($"  {model.Totals.Completion * 100:0}% complete by {(model.CountBasedSizing ? "issue count" : "story points")}"
-                      + $" ({model.Totals.DoneSize:0.#} of {model.Totals.Size:0.#})");
-    Console.WriteLine($"  {model.Totals.EpicsNotStarted} epic(s) not started, {model.Totals.StalledCount} stalled issue(s)");
-
-    foreach (var warning in model.Warnings) Console.WriteLine($"  ! {warning}");
-
-    Console.WriteLine();
-    Console.WriteLine($"Wrote {fullPath} in {stopwatch.Elapsed.TotalSeconds:0.0}s");
+    Console.WriteLine($"Wrote {fullPath} ({views.Count} view{(views.Count == 1 ? "" : "s")})"
+                      + $" in {stopwatch.Elapsed.TotalSeconds:0.0}s");
 
     if (options.OpenWhenDone) Open(fullPath);
     return 0;

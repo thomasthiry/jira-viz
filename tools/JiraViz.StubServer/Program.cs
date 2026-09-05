@@ -151,19 +151,72 @@ async Task HandleSearchAsync(HttpListenerContext context)
     });
 }
 
-// Just enough JQL to be useful locally: a project term is honoured and everything else ignored.
+// Just enough JQL to exercise layered views locally: a project clause plus the two field kinds
+// a milestone is most likely to be modelled with. Parentheses are ignored, so composed queries
+// such as "(project = DEMO) AND (fixVersion = \"24.2\")" parse. Unrecognised clauses are
+// ignored rather than rejected, which keeps the stub permissive while staying useful.
 static List<JsonObject> Filter(List<JsonObject> issues, string jql)
 {
-    var match = System.Text.RegularExpressions.Regex.Match(
-        jql, @"project\s*=\s*""?([A-Za-z][A-Za-z0-9_]*)""?",
-        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    // "key in (A, B)" is a lookup by key and ignores every other clause, which is exactly what
+    // the hierarchy completion pass needs.
+    var keys = KeyList(jql);
+    if (keys is not null)
+        return issues.Where(i => keys.Contains((string?)i["key"] ?? "", StringComparer.OrdinalIgnoreCase)).ToList();
 
-    if (!match.Success) return issues;
+    var result = issues;
 
-    var project = match.Groups[1].Value;
-    return issues
-        .Where(i => ((string?)i["key"])?.StartsWith(project + "-", StringComparison.OrdinalIgnoreCase) == true)
-        .ToList();
+    var project = Clause(jql, "project");
+    if (project is not null)
+        result = result
+            .Where(i => ((string?)i["key"])?.StartsWith(project + "-", StringComparison.OrdinalIgnoreCase) == true)
+            .ToList();
+
+    var version = Clause(jql, "fixVersion");
+    if (version is not null)
+        result = result.Where(i => ArrayOf(i, "fixVersions", "name").Contains(version, StringComparer.OrdinalIgnoreCase)).ToList();
+
+    var label = Clause(jql, "labels");
+    if (label is not null)
+        result = result.Where(i => ArrayOf(i, "labels", null).Contains(label, StringComparer.OrdinalIgnoreCase)).ToList();
+
+    return result;
+
+    static HashSet<string>? KeyList(string jql)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(
+            jql, @"key\s+in\s*\(([^)]*)\)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (!m.Success) return null;
+
+        return m.Groups[1].Value
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(k => k.Trim('"'))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    static string? Clause(string jql, string field)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(
+            jql, field + @"\s*=\s*(?:""([^""]*)""|([A-Za-z0-9_.\-]+))",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        if (!m.Success) return null;
+        return m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value;
+    }
+
+    // Reads a field that is either an array of strings (labels) or of objects (fixVersions).
+    static List<string> ArrayOf(JsonObject issue, string field, string? property)
+    {
+        var values = new List<string>();
+        if (issue["fields"]?[field] is not JsonArray array) return values;
+
+        foreach (var item in array)
+        {
+            var value = property is null ? (string?)item : (string?)item?[property];
+            if (value is not null) values.Add(value);
+        }
+        return values;
+    }
 }
 
 static string Shorten(string value) => value.Length <= 60 ? value : value[..60] + "...";

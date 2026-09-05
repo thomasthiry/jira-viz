@@ -21,10 +21,18 @@ public static class OptionsLoader
 
     public static JiraVizOptions Load(string[] args, string? settingsPath = null)
     {
-        var options = LoadFile(settingsPath);
+        // --config is read in a first pass: it decides which file the other layers build on.
+        var options = LoadFile(settingsPath ?? FindConfigArg(args));
         ApplyEnvironment(options);
         ApplyArgs(options, args);
         return options;
+    }
+
+    private static string? FindConfigArg(string[] args)
+    {
+        for (var i = 0; i < args.Length - 1; i++)
+            if (args[i] == "--config") return args[i + 1];
+        return null;
     }
 
     private static JiraVizOptions LoadFile(string? settingsPath)
@@ -67,6 +75,8 @@ public static class OptionsLoader
             {
                 case "--url": options.BaseUrl = Next(args, ref i, arg); break;
                 case "--jql": options.Jql = Next(args, ref i, arg); break;
+                case "--project-name": options.ProjectName = Next(args, ref i, arg); break;
+                case "--config": Next(args, ref i, arg); break; // already handled in the first pass
                 case "--out": case "-o": options.OutputPath = Next(args, ref i, arg); break;
                 case "--token": options.Token = Next(args, ref i, arg); break;
                 case "--user": options.Username = Next(args, ref i, arg); break;
@@ -105,6 +115,10 @@ public static class OptionsLoader
         Usage:
           JiraViz.Cli --url <jira-base-url> --jql "<query>" [options]
 
+        Named views (milestones) are configured in the settings file, not on the command line:
+        each entry under "views" is a JQL fragment ANDed onto --jql, and all of them are
+        fetched into one report with a switcher.
+
         Required:
           --url <url>              Jira Server/DC base URL, e.g. https://jira.example.com
           --jql "<query>"          Scope of the report, e.g. "project = ABC"
@@ -118,6 +132,8 @@ public static class OptionsLoader
               --epic-type <name>   Epic issue type name, if renamed (default: Epic)
               --points-field <id>  Story Points customfield id, skipping discovery
               --epic-link-field <id>  Epic Link customfield id, skipping discovery
+              --config <path>      Settings file to load (default: appsettings.json beside the app)
+              --project-name <s>   Title shown on the report
               --page-size <n>      Issues per request (default: 100)
               --insecure           Skip TLS validation, for corporate interception proxies
           -h, --help               Show this help

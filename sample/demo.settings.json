@@ -1,0 +1,16 @@
+{
+  "//": "Example multi-view config, pointed at the stub server. Run with --config sample/demo.settings.json",
+
+  "projectName": "Checkout Platform",
+  "baseUrl": "http://localhost:5252",
+  "jql": "project = DEMO",
+  "outputPath": "out/report.html",
+  "defaultViewName": "All open work",
+
+  "views": [
+    { "name": "Release 24.2", "jql": "fixVersion = \"24.2\"" },
+    { "name": "Release 24.3", "jql": "fixVersion = \"24.3\"" },
+    { "name": "Release 24.4", "jql": "fixVersion = \"24.4\"" },
+    { "name": "Tech debt",    "jql": "labels = tech-debt" }
+  ]
+}

@@ -4,7 +4,22 @@ namespace JiraViz.Core;
 public sealed class JiraVizOptions
 {
     public string BaseUrl { get; set; } = "";
+
+    /// <summary>The base scope every view is layered on top of.</summary>
     public string Jql { get; set; } = "";
+
+    /// <summary>Shown as the report title. Falls back to a generic heading when unset.</summary>
+    public string? ProjectName { get; set; }
+
+    /// <summary>Name given to the base query, which is always emitted as the first view.</summary>
+    public string DefaultViewName { get; set; } = "All work";
+
+    /// <summary>
+    /// Extra named views, each a JQL fragment ANDed onto <see cref="Jql"/>. Deliberately
+    /// free-form: the report has no notion of what a milestone is, so fixVersion, labels,
+    /// a sprint or a custom field all work without a code change.
+    /// </summary>
+    public List<ViewOptions> Views { get; set; } = new();
     public string OutputPath { get; set; } = "report.html";
 
     /// <summary>Personal Access Token. Bearer auth when <see cref="Username"/> is empty, Basic otherwise.</summary>
@@ -45,9 +60,36 @@ public sealed class JiraVizOptions
         if (StalledDays < 1) problems.Add("--stalled-days must be at least 1");
         if (PageSize is < 1 or > 1000) problems.Add("--page-size must be between 1 and 1000");
 
+        if (string.IsNullOrWhiteSpace(DefaultViewName))
+            problems.Add("defaultViewName must not be blank");
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { DefaultViewName.Trim() };
+        for (var i = 0; i < Views.Count; i++)
+        {
+            var view = Views[i];
+            var label = $"views[{i}]";
+
+            if (string.IsNullOrWhiteSpace(view.Name))
+                problems.Add($"{label} needs a name");
+            else if (!seen.Add(view.Name.Trim()))
+                problems.Add($"{label} repeats the view name '{view.Name.Trim()}'; names must be unique");
+
+            // An empty fragment would silently render a second copy of the base view.
+            if (string.IsNullOrWhiteSpace(view.Jql))
+                problems.Add($"{label} ('{view.Name}') needs a jql fragment to add to the base query");
+        }
+
+
         if (problems.Count > 0)
             throw new JiraVizConfigurationException(string.Join(Environment.NewLine, problems.Select(p => "  - " + p)));
     }
 }
 
 public sealed class JiraVizConfigurationException(string message) : Exception(message);
+
+/// <summary>A named query layered on top of the base scope.</summary>
+public sealed class ViewOptions
+{
+    public string Name { get; set; } = "";
+    public string Jql { get; set; } = "";
+}

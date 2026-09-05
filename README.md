@@ -8,8 +8,10 @@ underway, and what has not been started at all.
 
 ## What it shows
 
-- **A full-width headline** &mdash; overall completion as a large bar spanning the whole window,
-  each segment labelled with its share and its points.
+- **Named views** &mdash; a switcher across the top for milestones or any other slice, each pill
+  carrying its own completion so they can be compared without clicking through them.
+- **A full-width headline** &mdash; overall completion as a large bar, each segment labelled with
+  its share and its points.
 - **A KPI strip** &mdash; epic count, epics with no work finished, stalled issues.
 - **Epic progress bars** &mdash; one row per epic, 30px tall, stacked Done / In progress / To do
   in green / amber / red. Bar length is proportional to the epic workload, so a large untouched
@@ -72,6 +74,8 @@ It is not a Jira Cloud client: Cloud has removed `/rest/api/3/search` in favour 
 | `--points-field <id>` | Story Points `customfield_XXXXX`, skipping discovery |
 | `--epic-link-field <id>` | Epic Link `customfield_XXXXX`, skipping discovery |
 | `--page-size <n>` | Issues per request (default 100) |
+| `--config <path>` | Settings file to load (default `appsettings.json` beside the app) |
+| `--project-name <s>` | Title shown on the report |
 | `--insecure` | Skip TLS validation, for interception proxies |
 
 The token comes from `JIRAVIZ_TOKEN` (or `--token`), never from `appsettings.json`.
@@ -113,3 +117,44 @@ map individual status names in `appsettings.json`:
 - Nothing is ever written back to Jira.
 - Burnup and cumulative-flow charts are out of scope: they need each issue's changelog, which is
   a far heavier fetch.
+
+## Views: milestones and other slices
+
+A report can carry several named views. The `jql` setting is the base scope; each entry under
+`views` is a fragment **ANDed onto it**, so the project is written once:
+
+```json
+{
+  "projectName": "Checkout Platform",
+  "jql": "project = ABC AND resolution IS EMPTY",
+  "defaultViewName": "All open work",
+  "views": [
+    { "name": "Release 24.2", "jql": "fixVersion = \"24.2\"" },
+    { "name": "Tech debt",    "jql": "labels = tech-debt" }
+  ]
+}
+```
+
+Every view is fetched in one run and embedded in the same file, so switching between them is
+instant and works offline. The base query is always the first view. `sample/demo.settings.json`
+is a working example against the stub server:
+
+```bash
+dotnet run --project src/JiraViz.Cli -- --config sample/demo.settings.json
+```
+
+Nothing in the code knows what a milestone *is* — a view is just a name and a JQL fragment, so
+`fixVersion`, a label, a sprint or a custom field all work without a code change.
+
+**Completing the hierarchy.** A filtered view is the interesting case: on a real instance the
+fixVersion sits on the story, not on its epic, so `fixVersion = "24.2"` returns stories whose
+epics are missing and every one of them would fall into the synthetic "(no epic)" bucket. After
+each view is fetched, the missing ancestors are pulled in by key (`HierarchyCompleter`). This
+restores the tree without widening the view: an epic pulled in this way still shows only the
+stories the query actually matched, which is what *what is left for this milestone* should mean.
+
+A view that matches nothing renders as an empty view rather than failing the run — a milestone
+with no open work left is a good outcome. The run only fails when every view is empty.
+
+**Cost.** Authentication and field discovery happen once, so N views cost N searches (plus a
+small follow-up per view for the ancestors), not N x 3 round-trips.

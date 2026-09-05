@@ -60,10 +60,11 @@ public sealed class ProjectGenerator
                 var storyKey = NextKey();
                 var bucket = PickBucket(bp.Bias);
                 double? points = bp.Pointed ? Fibonacci() : null;
+                var release = PickRelease();
 
                 Issues.Add(MakeIssue(
                     storyKey, "Story", $"{bp.Name}: {StorySummary(i)}", bucket,
-                    points, epicLink: epicKey, parent: null));
+                    points, epicLink: epicKey, parent: null, fixVersion: release));
 
                 // Roughly half the stories are broken down; those are what give the report its
                 // partial-credit signal for work that is underway but not finished.
@@ -78,9 +79,10 @@ public sealed class ProjectGenerator
                             "new" => bp.Bias > 0 && _random.NextDouble() < 0.15 ? "done" : "new",
                             _ => PickBucket(0.5),
                         };
+                        // Subtasks inherit their story's release, as they do on a real instance.
                         Issues.Add(MakeIssue(
                             NextKey(), "Sub-task", $"{StorySummary(i)} - step {s + 1}", subBucket,
-                            points: null, epicLink: null, parent: storyKey));
+                            points: null, epicLink: null, parent: storyKey, fixVersion: release));
                     }
                 }
             }
@@ -91,12 +93,12 @@ public sealed class ProjectGenerator
 
         // Stories with no epic at all, which must land in the synthetic bucket.
         foreach (var summary in new[] { "Fix flaky login test", "Bump logging library", "Rotate staging secrets" })
-            Issues.Add(MakeIssue(NextKey(), "Story", summary, PickBucket(0.4), Fibonacci(), null, null));
+            Issues.Add(MakeIssue(NextKey(), "Story", summary, PickBucket(0.4), Fibonacci(), null, null, PickRelease()));
     }
 
     private JsonObject MakeIssue(
         string key, string type, string summary, string categoryKey,
-        double? points, string? epicLink, string? parent)
+        double? points, string? epicLink, string? parent, string? fixVersion = null)
     {
         var isSubtask = type == "Sub-task";
         var statusName = categoryKey switch
@@ -140,7 +142,10 @@ public sealed class ProjectGenerator
             ["created"] = Format(created),
             ["updated"] = Format(updated),
             ["resolutiondate"] = categoryKey == "done" ? Format(updated) : null,
-            ["labels"] = new JsonArray(),
+            ["labels"] = Labels(),
+            ["fixVersions"] = fixVersion is null
+                ? new JsonArray()
+                : new JsonArray(new JsonObject { ["name"] = fixVersion, ["released"] = false }),
             [StoryPointsFieldId] = points,
             [EpicLinkFieldId] = epicLink,
         };
@@ -156,6 +161,32 @@ public sealed class ProjectGenerator
         };
     }
 
+
+    /// <summary>
+    /// Releases the demo project ships into. Spread unevenly and with some issues unassigned,
+    /// so layered milestone views return genuinely different slices rather than the same set.
+    /// </summary>
+    public static readonly string[] Releases = { "24.2", "24.3", "24.4" };
+
+    /// <summary>
+    /// Picks the release a story is scheduled into. Deliberately assigned at story level only:
+    /// on a real instance epics rarely carry a fixVersion and subtasks inherit their story, and
+    /// that is exactly what makes a milestone query return a hierarchy full of holes.
+    /// </summary>
+    private string? PickRelease()
+    {
+        var roll = _random.NextDouble();
+        if (roll < 0.18) return null;   // not yet scheduled
+        return roll < 0.50 ? Releases[0] : roll < 0.80 ? Releases[1] : Releases[2];
+    }
+
+    private JsonArray Labels()
+    {
+        var labels = new JsonArray();
+        if (_random.NextDouble() < 0.22) labels.Add("tech-debt");
+        if (_random.NextDouble() < 0.15) labels.Add("customer-raised");
+        return labels;
+    }
     private string NextKey() => $"{ProjectKey}-{_nextNumber++}";
 
     /// <summary>Picks a status bucket so that, on average, a share equal to bias comes out done.</summary>

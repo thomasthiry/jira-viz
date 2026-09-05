@@ -130,6 +130,26 @@ header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spaci
 .btn[aria-pressed="true"] { color: var(--text-primary); border-color: var(--baseline); background: var(--surface-sunken); }
 
 
+
+/* ---------- view switcher ----------
+   Each pill carries its own completion, so the switcher doubles as a comparison: milestones
+   can be read against each other without clicking through them. */
+.views { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.view-pill {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  font: inherit; font-size: 13px; color: var(--text-secondary);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 999px; padding: 7px 14px; cursor: pointer;
+}
+.view-pill:hover { color: var(--text-primary); border-color: var(--baseline); }
+.view-pill:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.view-pill .vp-pct { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.view-pill[aria-pressed="true"] {
+  color: var(--text-primary); border-color: var(--link);
+  background: var(--surface-sunken); font-weight: 600;
+}
+.view-pill[aria-pressed="true"] .vp-pct { color: var(--text-secondary); }
+.view-pill.is-empty .vp-pct { font-style: italic; }
 /* ---------- overall progress headline ----------
    The widest block on the page and the first thing read, but aligned with the cards below it
    rather than bleeding to the window edges. */
@@ -400,13 +420,16 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
   <header class="top">
     <div>
-      <h1>Jira portfolio status</h1>
+      <h1 id="project-name">Jira portfolio status</h1>
       <p class="subtitle">
         <span id="meta-scope"></span>
       </p>
     </div>
     <button class="btn" id="theme-toggle" type="button" title="Switch between light and dark">Theme</button>
   </header>
+
+  <!-- One button per configured view; hidden when the report has only the base view. -->
+  <nav class="views" id="views" aria-label="Views" hidden></nav>
 
   <!-- The headline: the widest block on the page, aligned with the cards below it. -->
   <section class="overall" id="overall"></section>
@@ -508,7 +531,9 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
     return String(rounded);
   }
 
-  var UNIT = DATA.countBasedSizing ? "issues" : "pts";
+  // Per-view state. Reassigned by selectView, so every helper below reads the active view.
+  var VIEW, MODEL, t, UNIT, maxSize;
+
   function size(value) { return num(value) + " " + UNIT; }
 
   // An epic where nobody estimated is sized by counting its issues, so it must not claim to be
@@ -516,7 +541,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
   function unitFor(epic) { return epic.unestimated ? "issues" : UNIT; }
   function sizeOf(epic, value) { return num(value) + " " + unitFor(epic); }
 
-  function browseUrl(key) { return DATA.jiraBaseUrl + "/browse/" + encodeURIComponent(key); }
+  function browseUrl(key) { return MODEL.jiraBaseUrl + "/browse/" + encodeURIComponent(key); }
 
   function issueLink(key) {
     return '<a class="key" href="' + esc(browseUrl(key)) + '" target="_blank" rel="noopener">' +
@@ -543,8 +568,6 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
   }
 
   // ---- progress bars ---------------------------------------------------------
-
-  var maxSize = DATA.epics.reduce(function (acc, e) { return Math.max(acc, e.size); }, 0) || 1;
 
   // The bar is the main object on the page, so it is drawn tall enough to carry values inside it.
   var EPIC_BAR_HEIGHT = 30;
@@ -581,15 +604,15 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
   // ---- header & KPIs --------------------------------------------------------
 
-  var t = DATA.totals;
+  function renderMeta() {
+    document.getElementById("meta-scope").innerHTML =
+      "<code>" + esc(VIEW.jql) + "</code> &middot; generated " + esc(formatDate(DATA.generatedAt)) +
+      " &middot; sized by " + (MODEL.countBasedSizing ? "issue count" : "story points");
 
-  document.getElementById("meta-scope").innerHTML =
-    "<code>" + esc(DATA.jql) + "</code> &middot; generated " + esc(formatDate(DATA.generatedAt)) +
-    " &middot; sized by " + (DATA.countBasedSizing ? "issue count" : "story points");
-
-  document.getElementById("hero-hint").textContent = DATA.countBasedSizing
-    ? "No story points were found, so every issue counts as one. Bar length is the number of issues in the epic."
-    : "Bar length is the size of the epic and the fill is how much of it is finished. Stories earn partial credit from their subtasks.";
+    document.getElementById("hero-hint").textContent = MODEL.countBasedSizing
+      ? "No story points were found, so every issue counts as one. Bar length is the number of issues in the epic."
+      : "Bar length is the size of the epic and the fill is how much of it is finished. Stories earn partial credit from their subtasks.";
+  }
 
   // ---- overall headline -------------------------------------------------------
 
@@ -622,29 +645,35 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
     return '<div class="track" style="height:48px"><div class="bar">' + segments + "</div></div>";
   }
 
-  document.getElementById("overall").innerHTML =
-    '<div class="overall-head">' +
-      '<span class="overall-label">Overall complete</span>' +
-      '<span class="overall-pct">' + pct(t.completion) + "</span>" +
-      '<span class="overall-meta">' + size(t.doneSize) + " of " + size(t.size) + " finished</span>" +
-    "</div>" +
-    (t.size > 0 ? overallBarHtml() : '<div class="track" style="height:48px"></div>');
+  function renderHeadline() {
+    document.getElementById("overall").innerHTML =
+      '<div class="overall-head">' +
+        '<span class="overall-label">Overall complete</span>' +
+        '<span class="overall-pct">' + pct(t.completion) + "</span>" +
+        '<span class="overall-meta">' + (t.issueCount === 0
+          ? "Nothing matches this view"
+          : size(t.doneSize) + " of " + size(t.size) + " finished") + "</span>" +
+      "</div>" +
+      (t.size > 0 ? overallBarHtml() : '<div class="track" style="height:48px"></div>');
+  }
 
-  var kpiHtml = "";
+  function renderKpis() {
+    var kpiHtml = "";
 
-  kpiHtml += '<div class="kpi"><div class="label">Epics</div>' +
-    '<div class="value">' + t.epicCount + "</div>" +
-    '<div class="note">' + t.epicsDone + " finished &middot; " + t.issueCount + " issues in scope</div></div>";
+    kpiHtml += '<div class="kpi"><div class="label">Epics</div>' +
+      '<div class="value">' + t.epicCount + "</div>" +
+      '<div class="note">' + t.epicsDone + " finished &middot; " + t.issueCount + " issues in scope</div></div>";
 
-  kpiHtml += '<div class="kpi"><div class="label">Not started</div>' +
-    '<div class="value">' + t.epicsNotStarted + "</div>" +
-    '<div class="note">epic' + (t.epicsNotStarted === 1 ? "" : "s") + " with no work finished</div></div>";
+    kpiHtml += '<div class="kpi"><div class="label">Not started</div>' +
+      '<div class="value">' + t.epicsNotStarted + "</div>" +
+      '<div class="note">epic' + (t.epicsNotStarted === 1 ? "" : "s") + " with no work finished</div></div>";
 
-  kpiHtml += '<div class="kpi"><div class="label">Stalled</div>' +
-    '<div class="value">' + t.stalledCount + "</div>" +
-    '<div class="note">in progress, untouched ' + DATA.stalledDays + "+ days</div></div>";
+    kpiHtml += '<div class="kpi"><div class="label">Stalled</div>' +
+      '<div class="value">' + t.stalledCount + "</div>" +
+      '<div class="note">in progress, untouched ' + MODEL.stalledDays + "+ days</div></div>";
 
-  document.getElementById("kpis").innerHTML = kpiHtml;
+    document.getElementById("kpis").innerHTML = kpiHtml;
+  }
 
   // ---- epic list ------------------------------------------------------------
 
@@ -791,16 +820,20 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
   var openEpics = Object.create(null);
 
   function render() {
-    var visible = DATA.epics.filter(matches).slice().sort(SORTERS[sortMode]);
+    var visible = MODEL.epics.filter(matches).slice().sort(SORTERS[sortMode]);
 
     epicsEl.innerHTML = visible.map(function (epic) {
-      return epicHtml(epic, DATA.epics.indexOf(epic));
+      return epicHtml(epic, MODEL.epics.indexOf(epic));
     }).join("");
 
-    document.getElementById("epics-empty").hidden = visible.length > 0;
+    var emptyEl = document.getElementById("epics-empty");
+    emptyEl.hidden = visible.length > 0;
+    emptyEl.textContent = MODEL.epics.length === 0
+      ? "Nothing matches this view."
+      : "Nothing matches that filter.";
 
     Array.prototype.forEach.call(epicsEl.querySelectorAll(".epic"), function (node) {
-      var epic = DATA.epics[Number(node.dataset.epic)];
+      var epic = MODEL.epics[Number(node.dataset.epic)];
       if (openEpics[epic.key]) {
         node.classList.add("open");
         node.querySelector(".epic-head").setAttribute("aria-expanded", "true");
@@ -811,7 +844,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
   // ---- interaction ----------------------------------------------------------
 
   function toggleEpic(node) {
-    var epic = DATA.epics[Number(node.dataset.epic)];
+    var epic = MODEL.epics[Number(node.dataset.epic)];
     var isOpen = node.classList.toggle("open");
     openEpics[epic.key] = isOpen;
     node.querySelector(".epic-head").setAttribute("aria-expanded", isOpen ? "true" : "false");
@@ -858,7 +891,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
   });
 
   document.getElementById("expand-all").addEventListener("click", function () {
-    DATA.epics.forEach(function (epic) { openEpics[epic.key] = true; });
+    MODEL.epics.forEach(function (epic) { openEpics[epic.key] = true; });
     render();
   });
 
@@ -881,7 +914,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
     var cell = event.target.closest(".barcell");
     if (!cell) return;
 
-    var epic = DATA.epics[Number(cell.dataset.tip)];
+    var epic = MODEL.epics[Number(cell.dataset.tip)];
     tip.innerHTML = '<div class="t-title">' + esc(epic.summary) + "</div>" +
       tipRow("Done", epic.doneSize, epic.size, unitFor(epic)) +
       tipRow("InProgress", epic.inProgressSize, epic.size, unitFor(epic)) +
@@ -909,7 +942,8 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
   // ---- tables ---------------------------------------------------------------
 
-  document.querySelector("#epic-table tbody").innerHTML = DATA.epics.map(function (epic) {
+  function renderTable() {
+    document.querySelector("#epic-table tbody").innerHTML = MODEL.epics.map(function (epic) {
     return "<tr>" +
       "<td>" + (epic.isSynthetic ? "&mdash;" : issueLink(epic.key)) + "</td>" +
       "<td>" + esc(epic.summary) + "</td>" +
@@ -920,10 +954,13 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
       '<td class="num">' + num(epic.notStartedSize) + "</td>" +
       '<td class="num">' + pct(epic.completion) + "</td>" +
       "</tr>";
-  }).join("");
+    }).join("");
+  }
 
-  document.getElementById("footer").innerHTML =
-    "JiraViz &middot; " + DATA.totals.issueCount + " issues from " + esc(DATA.jiraBaseUrl);
+  function renderFooter() {
+    document.getElementById("footer").innerHTML =
+      "JiraViz &middot; " + t.issueCount + " issues from " + esc(MODEL.jiraBaseUrl);
+  }
 
   // ---- theme ----------------------------------------------------------------
 
@@ -935,7 +972,67 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
     try { localStorage.setItem("jiraviz-theme", next); } catch (err) { /* private mode */ }
   });
 
-  render();
+  // ---- views ------------------------------------------------------------------
+
+  var VIEW_KEY = "jiraviz-view";
+
+  function renderViewPills(activeIndex) {
+    var nav = document.getElementById("views");
+
+    // A single view means the base query only; a switcher of one is just noise.
+    if (DATA.views.length < 2) { nav.hidden = true; return; }
+
+    nav.hidden = false;
+    nav.innerHTML = DATA.views.map(function (v, i) {
+      var totals = v.model.totals;
+      var empty = totals.issueCount === 0;
+      var note = empty ? "empty" : pct(totals.completion);
+
+      return '<button type="button" class="view-pill' + (empty ? " is-empty" : "") +
+        '" data-view="' + i + '" aria-pressed="' + (i === activeIndex ? "true" : "false") + '">' +
+        esc(v.name) + '<span class="vp-pct">' + note + "</span></button>";
+    }).join("");
+  }
+
+  function selectView(index) {
+    VIEW = DATA.views[index];
+    MODEL = VIEW.model;
+    t = MODEL.totals;
+    UNIT = MODEL.countBasedSizing ? "issues" : "pts";
+    maxSize = MODEL.epics.reduce(function (acc, e) { return Math.max(acc, e.size); }, 0) || 1;
+
+    // Remembered by name rather than index, so a changed config cannot land the reader on
+    // a different milestone than the one they left open.
+    try { localStorage.setItem(VIEW_KEY, VIEW.name); } catch (err) { /* private mode */ }
+
+    renderViewPills(index);
+    renderMeta();
+    renderHeadline();
+    renderKpis();
+    renderTable();
+    renderFooter();
+    render();
+  }
+
+  document.getElementById("views").addEventListener("click", function (event) {
+    var pill = event.target.closest(".view-pill");
+    if (pill) selectView(Number(pill.dataset.view));
+  });
+
+  if (DATA.projectName) {
+    document.getElementById("project-name").textContent = DATA.projectName;
+    document.title = DATA.projectName + " - portfolio status";
+  }
+
+  var startIndex = 0;
+  try {
+    var savedView = localStorage.getItem(VIEW_KEY);
+    for (var i = 0; i < DATA.views.length; i++) {
+      if (DATA.views[i].name === savedView) { startIndex = i; break; }
+    }
+  } catch (err) { /* storage unavailable; start on the base view */ }
+
+  selectView(startIndex);
 })();
 </script>
 </body>

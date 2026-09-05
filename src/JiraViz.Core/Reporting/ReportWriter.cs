@@ -26,13 +26,13 @@ public static class ReportWriter
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Default,
     };
 
-    public static string Render(ReportModel model, string template)
+    public static string Render(ReportDocument document, string template)
     {
         if (!template.Contains(DataMarker, StringComparison.Ordinal))
             throw new InvalidOperationException(
                 $"The report template is missing its '{DataMarker}' marker.");
 
-        var json = JsonSerializer.Serialize(model, JsonOptions);
+        var json = JsonSerializer.Serialize(document, JsonOptions);
 
         // Belt and braces: the encoder above already escapes '<', but a literal "</script>"
         // inside the payload would end the block, so make that impossible.
@@ -41,9 +41,9 @@ public static class ReportWriter
         return template.Replace(DataMarker, json, StringComparison.Ordinal);
     }
 
-    public static async Task WriteAsync(ReportModel model, string outputPath, CancellationToken ct = default)
+    public static async Task WriteAsync(ReportDocument document, string outputPath, CancellationToken ct = default)
     {
-        var html = Render(model, await LoadTemplateAsync(ct));
+        var html = Render(document, await LoadTemplateAsync(ct));
 
         var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
         if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
