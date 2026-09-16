@@ -53,9 +53,10 @@ no story points at all, stories with no epic, an empty epic, and several stale i
 ## Against a real Jira
 
 ```bash
-export JIRAVIZ_TOKEN=<personal access token>
-dotnet run --project src/JiraViz.Cli -- \
-  --url https://jira.example.com --jql "project = ABC AND resolution IS EMPTY" --out report.html
+$env:JIRAVIZ_TOKEN=<personal access token>
+dotnet run --project src/JiraViz.Cli --config .\src\JiraViz.Cli\appsettings.prod.json --open
+// or :
+dotnet run --project src/JiraViz.Cli --url https://jira.example.com --jql "project = ABC AND resolution IS EMPTY" --out report.html
 ```
 
 Targets **Jira Server / Data Center** (REST API v2, PAT bearer auth, `startAt` pagination).
