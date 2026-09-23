@@ -1,3 +1,5 @@
+using JiraViz.Core.Analysis;
+
 namespace JiraViz.Core;
 
 /// <summary>Everything the app needs to know, resolved from CLI args, env vars and appsettings.json.</summary>
@@ -31,6 +33,9 @@ public sealed class JiraVizOptions
     /// <summary>Days without an update before an in-progress issue counts as stalled.</summary>
     public int StalledDays { get; set; } = 14;
 
+    /// <summary>Controls the projected completion date.</summary>
+    public ForecastSettings Forecast { get; set; } = new();
+
     /// <summary>Name of the epic issue type; renamed on some instances.</summary>
     public string EpicIssueTypeName { get; set; } = "Epic";
 
@@ -58,6 +63,11 @@ public sealed class JiraVizOptions
         else if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out _)) problems.Add($"--url is not a valid absolute URL: {BaseUrl}");
         if (string.IsNullOrWhiteSpace(Jql)) problems.Add("--jql is required (e.g. \"project = ABC\")");
         if (StalledDays < 1) problems.Add("--stalled-days must be at least 1");
+        if (Forecast.WindowWeeks < ForecastCalculator.MinimumSampleWeeks)
+            problems.Add($"forecast.windowWeeks must be at least {ForecastCalculator.MinimumSampleWeeks}, "
+                         + "which is the least history the projection will work from");
+        if (Forecast.Simulations is < 100 or > 1_000_000)
+            problems.Add("forecast.simulations must be between 100 and 1000000");
         if (PageSize is < 1 or > 1000) problems.Add("--page-size must be between 1 and 1000");
 
         if (string.IsNullOrWhiteSpace(DefaultViewName))
@@ -86,6 +96,28 @@ public sealed class JiraVizOptions
 }
 
 public sealed class JiraVizConfigurationException(string message) : Exception(message);
+
+/// <summary>Knobs for the projected completion date.</summary>
+public sealed class ForecastSettings
+{
+    /// <summary>Set false to leave the projection off the report entirely.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// How many recent complete weeks the simulation draws its throughput from. Long enough to
+    /// cover a team's normal ups and downs, short enough that a reorganisation six months ago
+    /// is not still being treated as evidence about next month.
+    /// </summary>
+    public int WindowWeeks { get; set; } = 12;
+
+    /// <summary>
+    /// How many times the finish is simulated. The count only sets how precisely the
+    /// percentiles are pinned down - the error falls as 1/sqrt(n) - and each run is a handful
+    /// of additions, so this is set high enough that the dates do not move between runs on
+    /// unchanged data rather than to any statistical threshold.
+    /// </summary>
+    public int Simulations { get; set; } = 10_000;
+}
 
 /// <summary>A named query layered on top of the base scope.</summary>
 public sealed class ViewOptions

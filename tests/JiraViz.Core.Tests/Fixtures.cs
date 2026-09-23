@@ -18,6 +18,7 @@ internal static class Fixtures
         double? points = null,
         bool isSubtask = false,
         DateTimeOffset? updated = null,
+        DateTimeOffset? resolved = null,
         string? epicLink = null,
         string? parent = null,
         string? type = null) => new()
@@ -35,13 +36,22 @@ internal static class Fixtures
         IsSubtask = isSubtask,
         StoryPoints = points,
         Updated = updated ?? DefaultUpdated,
+        Resolved = resolved,
         EpicLinkKey = epicLink,
         ParentKey = parent,
     };
 
     public static StoryGroup Story(
-        string key, string categoryKey, double? points = null, DateTimeOffset? updated = null)
-        => new() { Story = Issue(key, categoryKey, points, updated: updated) };
+        string key,
+        string categoryKey,
+        double? points = null,
+        DateTimeOffset? updated = null,
+        DateTimeOffset? resolved = null)
+        => new() { Story = Issue(key, categoryKey, points, updated: updated, resolved: resolved) };
+
+    /// <summary>A story that finished on a given date, sized in points.</summary>
+    public static StoryGroup Finished(string key, DateTimeOffset resolved, double points)
+        => Story(key, Done, points, resolved: resolved);
 
     public static EpicGroup Epic(string key, string summary, params StoryGroup[] stories)
     {

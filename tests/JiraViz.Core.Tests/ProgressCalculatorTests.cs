@@ -136,4 +136,35 @@ public class ProgressCalculatorTests
 
         Assert.Equal("E-TODO", model.Epics.First().Key);
     }
+
+    [Fact]
+    public void The_burnup_accounts_for_the_same_work_the_headline_does()
+    {
+        // The projection must not be able to drift from the bars above it: everything the
+        // headline counts as done is either dated on the curve, in its baseline, or declared as
+        // undated in-progress credit.
+        var resolved = Now.AddDays(-30);
+        var story = Fixtures.Story("S-3", Fixtures.InProgress, points: 6);
+        story.Subtasks.Add(Fixtures.Issue("T-1", Fixtures.Done, isSubtask: true, resolved: resolved, parent: "S-3"));
+        story.Subtasks.Add(Fixtures.Issue("T-2", Fixtures.ToDo, isSubtask: true, parent: "S-3"));
+
+        var model = Build(Fixtures.Epic("E-1", "Mixed",
+            Fixtures.Finished("S-1", resolved, points: 5),
+            Fixtures.Story("S-2", Fixtures.InProgress, points: 4),
+            story,
+            Fixtures.Story("S-4", Fixtures.ToDo, points: 5)));
+
+        var forecast = model.Forecast;
+        Assert.Equal(
+            model.Totals.DoneSize,
+            forecast.CompletedSize + forecast.UndatedCreditSize,
+            3);
+
+        // S-1 in full plus half of S-3 from its one finished subtask.
+        Assert.Equal(8, forecast.CompletedSize, 3);
+
+        // S-2 is in progress with no subtasks, so its credit carries no date.
+        Assert.Equal(2, forecast.UndatedCreditSize, 3);
+        Assert.Equal(model.Totals.Size - 8, forecast.RemainingSize, 3);
+    }
 }

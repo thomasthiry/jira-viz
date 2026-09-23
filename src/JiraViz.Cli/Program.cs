@@ -68,7 +68,7 @@ try
             Console.WriteLine($"  pulled in {issues.Count - matched} ancestor(s) to complete the hierarchy");
 
         var (groups, warnings) = new HierarchyBuilder(options.EpicIssueTypeName).Build(issues);
-        var model = new ProgressCalculator(bucketer, options.StalledDays, sharedImputedPoints)
+        var model = new ProgressCalculator(bucketer, options.StalledDays, sharedImputedPoints, options.Forecast)
             .Build(groups, warnings, options.BaseUrl, jql, generatedAt);
 
         if (sharedImputedPoints is null && model.ImputedPoints is not null)
@@ -94,6 +94,7 @@ try
                           + $" {(model.CountBasedSizing ? "issues" : "pts")})");
         Console.WriteLine($"  {model.Totals.EpicsNotStarted} epic(s) not started, "
                           + $"{model.Totals.StalledCount} stalled issue(s)");
+        ReportForecast(model);
 
         foreach (var warning in model.Warnings) Console.WriteLine($"  ! {warning}");
     }
@@ -138,6 +139,28 @@ catch (OperationCanceledException)
 {
     Console.Error.WriteLine("Cancelled.");
     return 130;
+}
+
+static void ReportForecast(ReportModel model)
+{
+    var forecast = model.Forecast;
+
+    // Someone who passed --no-forecast does not need telling once per view that it is off.
+    if (forecast.Suppressed) return;
+
+    if (!forecast.Available)
+    {
+        if (forecast.UnavailableReason is not null) Console.WriteLine($"  no projection: {forecast.UnavailableReason}");
+        return;
+    }
+
+    var unit = model.CountBasedSizing ? "issues" : "pts";
+    Console.WriteLine($"  {forecast.MeanWeeklyThroughput:0.#} {unit}/week over the last "
+                      + $"{forecast.Samples.Count} week(s); {forecast.RemainingSize:0.#} {unit} left");
+
+    Console.WriteLine(forecast.P85Date is null
+        ? $"  100% is further out than this report projects ({forecast.BeyondHorizonShare:P0} of runs unfinished)"
+        : $"  100% by {forecast.P50Date:yyyy-MM-dd} at even odds, {forecast.P85Date:yyyy-MM-dd} to be safe");
 }
 
 static void Report(string label, string searchedName, string? resolvedId)

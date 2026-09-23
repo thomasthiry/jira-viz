@@ -13,7 +13,10 @@ underway, and what has not been started at all.
   so which milestone is furthest along is readable without reading any of the figures.
 - **A full-width headline** &mdash; overall completion as a large bar, each segment labelled with
   its share and its points.
-- **A KPI strip** &mdash; epic count, epics with no work finished, stalled issues.
+- **A projected completion date** &mdash; a burn-up of the work finished each week, reconstructed
+  from resolution dates, with the remaining work projected forward to an even-odds date and a
+  cautious one. Both dates lead the KPI strip.
+- **A KPI strip** &mdash; the projected date, epic count, epics with no work finished, stalled issues.
 - **Epic progress bars** &mdash; one row per epic, 30px tall, stacked Done / In progress / To do
   in green / amber / red. Bar length is proportional to the epic workload, so a large untouched
   epic is the longest, reddest bar on the page; bars below 12 per cent of the widest are floored
@@ -55,8 +58,12 @@ no story points at all, stories with no epic, an empty epic, and several stale i
 ```bash
 export JIRAVIZ_TOKEN=<personal access token>
 dotnet run --project src/JiraViz.Cli -- \
-  --url https://jira.example.com --jql "project = ABC AND resolution IS EMPTY" --out report.html
+  --url https://jira.example.com --jql "project = ABC" --out report.html
 ```
+
+Keep finished work in the query. A scope like `resolution IS EMPTY` reports only what is left,
+which leaves the completion percentage at nothing to divide by and the projection with no
+history to read.
 
 Targets **Jira Server / Data Center** (REST API v2, PAT bearer auth, `startAt` pagination).
 It is not a Jira Cloud client: Cloud has removed `/rest/api/3/search` in favour of
@@ -71,6 +78,9 @@ It is not a Jira Cloud client: Cloud has removed `/rest/api/3/search` in favour 
 | `-o, --out <path>` | Output file (default `report.html`) |
 | `--open` | Open the report when it is written |
 | `--stalled-days <n>` | Idle days before in-progress work is stalled (default 14) |
+| `--forecast-weeks <n>` | Recent complete weeks the projection samples (default 12) |
+| `--forecast-sims <n>` | Simulated finishes behind the projected dates (default 10000) |
+| `--no-forecast` | Leave the projection off the report entirely |
 | `--epic-type <name>` | Epic issue type name, if renamed |
 | `--points-field <id>` | Story Points `customfield_XXXXX`, skipping discovery |
 | `--epic-link-field <id>` | Epic Link `customfield_XXXXX`, skipping discovery |
@@ -107,6 +117,39 @@ map individual status names in `appsettings.json`:
 "statusOverrides": { "Awaiting Release": "Done", "Blocked": "InProgress" }
 ```
 
+## Projecting the completion date
+
+Every issue carries a resolution date, so the first run already has months of history behind it:
+summing the sizes of everything resolved before a given week gives a burn-up without a single
+extra request.
+
+The finish is then **simulated rather than averaged**. Taking the mean weekly throughput and
+dividing gives a date you would beat about half the time, which is not the question anyone is
+asking. Instead the last `--forecast-weeks` complete weeks become a bag of samples, and a run
+draws whole weeks from it at random until the remaining work is covered. Ten thousand runs give
+a distribution of finish dates, and the report prints two of them: the **even-odds** date and
+the date **85% of runs** beat. Sampling rather than solving because throughput is lumpy and
+skewed, and "how many weeks until the cumulative sum covers the remainder" has no closed form
+for an arbitrary empirical distribution.
+
+The simulation is seeded to a constant and uses its own generator, so regenerating an unchanged
+report produces an unchanged date.
+
+What it does and does not claim:
+
+- **Only finished work counts.** The 0.5 credit an in-progress story earns has no completion
+  date, so it is reported under the chart but never projected from. That is why the curve ends
+  slightly below the headline percentage.
+- **Quiet weeks count.** A week where nothing landed stays in the sample; dropping it would
+  inflate the rate. Only the week in progress right now is excluded, since it is not a whole week.
+- **Scope is today's scope.** Resolution dates cannot show what the plan looked like at the time,
+  so work added along the way is drawn as though it was always there and the scope line is flat.
+  A project whose scope is still growing will finish later than this says.
+- **The history has to include finished work.** A base query like `resolution IS EMPTY` filters
+  out everything the projection reads, and the report will say so instead of guessing.
+- Under eight complete weeks of history, no projection is offered &mdash; percentiles drawn from
+  three data points would be dressing up noise.
+
 ## Layout
 
 | Path | What it is |
@@ -123,8 +166,9 @@ map individual status names in `appsettings.json`:
 - The report is one file with **no external requests at all** &mdash; no CDN, no fonts, no scripts.
   It works from `file://` on a machine with no internet.
 - Nothing is ever written back to Jira.
-- Burnup and cumulative-flow charts are out of scope: they need each issue's changelog, which is
-  a far heavier fetch.
+- The burn-up is reconstructed from resolution dates, which come back with the issues anyway.
+  Cumulative-flow is still out of scope: it needs each issue's changelog, which is a far
+  heavier fetch.
 
 ## Views: milestones and other slices
 
@@ -134,7 +178,7 @@ A report can carry several named views. The `jql` setting is the base scope; eac
 ```json
 {
   "projectName": "Checkout Platform",
-  "jql": "project = ABC AND resolution IS EMPTY",
+  "jql": "project = ABC",
   "defaultViewName": "All open work",
   "views": [
     { "name": "Release 24.2", "jql": "fixVersion = \"24.2\"" },

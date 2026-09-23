@@ -111,10 +111,15 @@ public sealed class ProjectGenerator
         };
 
         // In-progress issues get a wide spread of update ages so a believable number of them
-        // fall the far side of the stalled threshold.
-        var ageDays = categoryKey == "indeterminate"
-            ? _random.NextDouble() < 0.25 ? _random.Next(15, 70) : _random.Next(0, 12)
-            : _random.Next(0, 60);
+        // fall the far side of the stalled threshold. Finished work is spread across the whole
+        // life of the project instead, so the report has months of real weekly throughput -
+        // quiet weeks included - to reconstruct a burn-up and a projection from.
+        var ageDays = categoryKey switch
+        {
+            "indeterminate" => _random.NextDouble() < 0.25 ? _random.Next(15, 70) : _random.Next(0, 12),
+            "done" => _random.Next(0, 210),
+            _ => _random.Next(0, 60),
+        };
 
         var updated = _now.AddDays(-ageDays).AddHours(-_random.Next(0, 24));
         var created = updated.AddDays(-_random.Next(5, 180));

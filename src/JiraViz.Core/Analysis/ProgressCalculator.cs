@@ -16,10 +16,19 @@ namespace JiraViz.Core.Analysis;
 public sealed class ProgressCalculator(
     StatusBucketer bucketer,
     int stalledDays,
-    double? sharedImputedPoints = null)
+    double? sharedImputedPoints = null,
+    ForecastSettings? forecast = null)
 {
     private readonly StatusBucketer _bucketer = bucketer;
     private readonly int _stalledDays = stalledDays;
+    private readonly ForecastSettings _forecast = forecast ?? new ForecastSettings();
+
+    /// <summary>
+    /// Every piece of completion credit awarded below, with the date it was earned. Collected
+    /// here rather than reconstructed afterwards so that the projection is working from exactly
+    /// the same arithmetic as the bars: the credits sum to the portfolio's done size.
+    /// </summary>
+    private readonly List<CreditEvent> _credits = new();
 
     /// <summary>
     /// A stand-in size decided elsewhere, so that every view in a report sizes unestimated work
@@ -41,6 +50,7 @@ public sealed class ProgressCalculator(
         string jql,
         DateTimeOffset now)
     {
+        _credits.Clear();
         var allStories = groups.SelectMany(g => g.Stories).ToList();
 
         // Stories with no estimate are sized by the rounded mean of the ones that have one. The
@@ -85,6 +95,9 @@ public sealed class ProgressCalculator(
             HasImputed = epics.Any(e => e.HasImputed),
         };
 
+        var forecast = new ForecastCalculator(_forecast)
+            .Build(_credits, totalSize, totals.HasImputed, now);
+
         return new ReportModel
         {
             GeneratedAt = now,
@@ -94,6 +107,7 @@ public sealed class ProgressCalculator(
             CountBasedSizing = countBased,
             ImputedPoints = _imputedPoints,
             Totals = totals,
+            Forecast = forecast,
             Epics = epics,
             Stalled = stalled,
             Warnings = warnings,
@@ -155,13 +169,36 @@ public sealed class ProgressCalculator(
             .ThenBy(t => t.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var storySize = SizeOf(story);
+
         double completion;
         if (bucket == StatusBucket.Done)
+        {
             completion = 1.0;
+            _credits.Add(new CreditEvent(story.Resolved, storySize, Completed: true));
+        }
         else if (subtasks.Count > 0)
+        {
             completion = (double)subtasks.Count(t => t.Bucket == StatusBucket.Done) / subtasks.Count;
+
+            // Each finished subtask is dated work in its own right, so a story that is half
+            // done contributes half its size on the day its second subtask closed.
+            var share = storySize / subtasks.Count;
+            foreach (var subtask in group.Subtasks)
+            {
+                if (_bucketer.Bucket(subtask.StatusName, subtask.StatusCategoryKey) != StatusBucket.Done) continue;
+                _credits.Add(new CreditEvent(subtask.Resolved, share, Completed: true));
+            }
+        }
         else
+        {
             completion = bucket == StatusBucket.InProgress ? InProgressCredit : 0.0;
+
+            // Nothing here finished, so there is no date to hang this on. It is recorded as
+            // uncompleted credit and reported, never projected from.
+            if (completion > 0)
+                _credits.Add(new CreditEvent(null, storySize * completion, Completed: false));
+        }
 
         return new StoryView
         {
@@ -170,7 +207,7 @@ public sealed class ProgressCalculator(
             Status = story.StatusName,
             Bucket = bucket,
             IssueType = story.IssueTypeName,
-            Size = SizeOf(story),
+            Size = storySize,
             Imputed = !HasPoints(story) && _imputedPoints is not null,
             Completion = completion,
             Points = story.StoryPoints,

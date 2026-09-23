@@ -213,6 +213,32 @@ header.top h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spaci
 .kpi .value { font-size: 26px; font-weight: 640; line-height: 1.1; letter-spacing: -0.02em; }
 .kpi .note { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 
+/* ---------- projected completion ----------
+   One series - work finished over time - drawn in the same green the bars use, because it is
+   the same thing being counted. Everything that is not finished work is neutral ink: the scope
+   line, the week markers, the grid. Solid is measured, dashed is projected; nothing else in the
+   report is dashed, so the eye picks up where the evidence stops without needing the legend. */
+.forecast .chart { margin: 4px 0 0; }
+.forecast svg { display: block; width: 100%; height: auto; }
+.forecast .gridline { stroke: var(--gridline); stroke-width: 1; }
+.forecast .axis { stroke: var(--baseline); stroke-width: 1; }
+.forecast .tick {
+  font-size: 10.5px; fill: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+.forecast .tick.mark { fill: var(--text-secondary); }
+.forecast .scope-line { stroke: var(--baseline); stroke-width: 1; }
+.forecast .scope-label { font-size: 10.5px; fill: var(--text-muted); }
+.forecast .wash { fill: var(--good); opacity: 0.10; }
+.forecast .curve { fill: none; stroke: var(--good); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.forecast .curve.projected { stroke-dasharray: 5 4; }
+.forecast .now { stroke: var(--gridline); stroke-width: 1; }
+.forecast .marker { stroke: var(--baseline); stroke-width: 1; stroke-dasharray: 3 3; }
+.forecast .head-dot { fill: var(--good); stroke: var(--surface); stroke-width: 2; }
+.forecast .cross { stroke: var(--baseline); stroke-width: 1; }
+.forecast .hit { fill: transparent; }
+.forecast .off { display: none; }
+.forecast .unavailable { margin: 0; font-size: 12.5px; color: var(--text-secondary); }
+
 /* ---------- cards & controls ---------- */
 
 .card {
@@ -437,6 +463,9 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
   <!-- The headline: the widest block on the page, aligned with the cards below it. -->
   <section class="overall" id="overall"></section>
+
+  <!-- The headline's own follow-up question: at this rate, when does that bar fill? -->
+  <section class="card forecast" id="forecast" hidden></section>
 
   <section class="card">
     <h2>Epics by progress</h2>
@@ -675,6 +704,20 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
   function renderKpis() {
     var kpiHtml = "";
+    var f = MODEL.forecast;
+
+    if (f && !f.suppressed) {
+      var value = f.available && f.p50Date ? shortDate(f.p50Date) : "&mdash;";
+      var note = f.available
+        ? (f.p85Date
+            ? "at even odds &middot; 85% by " + esc(shortDate(f.p85Date))
+            : "further out than this report projects")
+        : esc(f.unavailableReason || "");
+
+      kpiHtml += '<div class="kpi"><div class="label">Projected 100%</div>' +
+        '<div class="value">' + value + "</div>" +
+        '<div class="note">' + note + "</div></div>";
+    }
 
     kpiHtml += '<div class="kpi"><div class="label">Epics</div>' +
       '<div class="value">' + t.epicCount + "</div>" +
@@ -690,6 +733,292 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
 
     document.getElementById("kpis").innerHTML = kpiHtml;
   }
+
+  // ---- projected completion ---------------------------------------------------
+
+  // Reconstructed from resolution dates, so the curve behind today is measured rather than
+  // assumed. Ahead of today the same green fans out between the even-odds finish and the
+  // cautious one: the projection is a range, and drawing it as a single line would claim a
+  // precision the history does not support.
+
+  var FORECAST_HEIGHT = 210;
+  var FC_PAD = { left: 54, right: 18, top: 14, bottom: 30 };
+
+  var forecastEl = document.getElementById("forecast");
+
+  function shortDate(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    var sameYear = d.getFullYear() === new Date(DATA.generatedAt).getFullYear();
+    return d.toLocaleDateString(undefined, sameYear
+      ? { month: "short", day: "numeric" }
+      : { year: "numeric", month: "short", day: "numeric" });
+  }
+
+  // Axis values want round numbers, not the data's own maximum: 0 / 60 / 120 / 180 reads at a
+  // glance where 0 / 61.5 / 123 / 184.5 does not.
+  function niceScale(max, count) {
+    if (!(max > 0)) return { top: 1, ticks: [0, 1] };
+
+    var rough = max / count;
+    var magnitude = Math.pow(10, Math.floor(Math.log(rough) / Math.LN10));
+    var normalised = rough / magnitude;
+    var step = (normalised <= 1 ? 1 : normalised <= 2 ? 2 : normalised <= 5 ? 5 : 10) * magnitude;
+
+    var top = Math.ceil(max / step) * step;
+    var ticks = [];
+    for (var v = 0; v <= top + step / 1000; v += step) ticks.push(v);
+    return { top: top, ticks: ticks };
+  }
+
+  // Month starts inside the plotted span, thinned until the labels have room to breathe.
+  function monthTicks(fromMs, toMs, plotWidth) {
+    var out = [];
+    var cursor = new Date(fromMs);
+    cursor.setDate(1);
+    cursor.setHours(0, 0, 0, 0);
+    if (cursor.getTime() < fromMs) cursor.setMonth(cursor.getMonth() + 1);
+
+    while (cursor.getTime() <= toMs && out.length < 40) {
+      out.push(cursor.getTime());
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    var room = Math.max(1, Math.ceil(out.length / Math.max(1, Math.floor(plotWidth / 62))));
+    return out.filter(function (_, i) { return i % room === 0; });
+  }
+
+  var fcGeometry = null; // kept for the hover layer, which reads back the scales
+
+  function forecastChart(f, width) {
+    var plotW = width - FC_PAD.left - FC_PAD.right;
+    var plotH = FORECAST_HEIGHT - FC_PAD.top - FC_PAD.bottom;
+    if (plotW < 140 || !f.burnup.length) return "";
+
+    var points = f.burnup.map(function (p) {
+      return { ms: new Date(p.weekStart).getTime(), done: p.doneSize, week: p.throughput };
+    });
+
+    var nowMs = new Date(DATA.generatedAt).getTime();
+    var endMs = Math.max(
+      nowMs,
+      f.p85Date ? new Date(f.p85Date).getTime() : 0,
+      f.p50Date ? new Date(f.p50Date).getTime() : 0
+    );
+
+    var fromMs = points[0].ms;
+    // A little air at each end so the first point and the finish are not welded to the frame.
+    var span = Math.max(endMs - fromMs, 7 * 86400000);
+    var t0 = fromMs - span * 0.02;
+    var t1 = endMs + span * 0.03;
+
+    var scale = niceScale(Math.max(f.totalSize, points[points.length - 1].done), 4);
+
+    function sx(ms) { return FC_PAD.left + ((ms - t0) / (t1 - t0)) * plotW; }
+    function sy(v) { return FC_PAD.top + plotH - (v / scale.top) * plotH; }
+
+    fcGeometry = { points: points, sx: sx, sy: sy, plotH: plotH, unit: UNIT, hasImputed: t.hasImputed };
+
+    var svg = "";
+
+    scale.ticks.forEach(function (v) {
+      var y = sy(v);
+      svg += '<line class="gridline" x1="' + FC_PAD.left + '" y1="' + y.toFixed(1) +
+        '" x2="' + (FC_PAD.left + plotW) + '" y2="' + y.toFixed(1) + '"/>';
+      svg += '<text class="tick" x="' + (FC_PAD.left - 8) + '" y="' + (y + 3.5).toFixed(1) +
+        '" text-anchor="end">' + num(v) + "</text>";
+    });
+
+    var axisY = sy(0);
+    svg += '<line class="axis" x1="' + FC_PAD.left + '" y1="' + axisY.toFixed(1) +
+      '" x2="' + (FC_PAD.left + plotW) + '" y2="' + axisY.toFixed(1) + '"/>';
+
+    monthTicks(t0, t1, plotW).forEach(function (ms, index) {
+      var d = new Date(ms);
+      var label = d.toLocaleDateString(undefined, { month: "short" });
+      if (index === 0 || d.getMonth() === 0) label += " \u2019" + String(d.getFullYear()).slice(2);
+      svg += '<text class="tick" x="' + sx(ms).toFixed(1) + '" y="' + (axisY + 15) +
+        '" text-anchor="middle">' + esc(label) + "</text>";
+    });
+
+    // Where today falls, so the two projected dates can be read off the same axis.
+    svg += '<line class="now" x1="' + sx(nowMs).toFixed(1) + '" y1="' + FC_PAD.top +
+      '" x2="' + sx(nowMs).toFixed(1) + '" y2="' + axisY.toFixed(1) + '"/>';
+
+    // The finish line. Flat, because this history can only see the scope that is in the query
+    // today - work added along the way looks as though it was always there.
+    var scopeY = sy(f.totalSize);
+    svg += '<line class="scope-line" x1="' + FC_PAD.left + '" y1="' + scopeY.toFixed(1) +
+      '" x2="' + (FC_PAD.left + plotW) + '" y2="' + scopeY.toFixed(1) + '"/>';
+    svg += '<text class="scope-label" x="' + (FC_PAD.left + 5) + '" y="' + (scopeY - 5).toFixed(1) +
+      '">all ' + esc(size(f.totalSize, t.hasImputed)) + "</text>";
+
+    var curve = points.map(function (p, i) {
+      return (i === 0 ? "M" : "L") + sx(p.ms).toFixed(1) + "," + sy(p.done).toFixed(1);
+    }).join(" ");
+
+    var headX = sx(points[points.length - 1].ms);
+    var headY = sy(points[points.length - 1].done);
+
+    svg += '<path class="wash" d="' + curve + " L" + headX.toFixed(1) + "," + axisY.toFixed(1) +
+      " L" + sx(points[0].ms).toFixed(1) + "," + axisY.toFixed(1) + ' Z"/>';
+
+    // The fan between the even-odds finish and the cautious one.
+    if (f.p50Date && f.p85Date) {
+      var x50 = sx(new Date(f.p50Date).getTime());
+      var x85 = sx(new Date(f.p85Date).getTime());
+      svg += '<path class="wash" d="M' + headX.toFixed(1) + "," + headY.toFixed(1) +
+        " L" + x50.toFixed(1) + "," + scopeY.toFixed(1) +
+        " L" + x85.toFixed(1) + "," + scopeY.toFixed(1) + ' Z"/>';
+      svg += '<path class="curve projected" d="M' + headX.toFixed(1) + "," + headY.toFixed(1) +
+        " L" + x50.toFixed(1) + "," + scopeY.toFixed(1) + '"/>';
+
+      // Two markers where they have room to be told apart; otherwise the cautious one alone,
+      // which is the date anyone would commit to anyway.
+      var marks = Math.abs(x85 - x50) < 34
+        ? [{ x: x85, label: "85%" }]
+        : [{ x: x50, label: "50%" }, { x: x85, label: "85%" }];
+
+      marks.forEach(function (m) {
+        svg += '<line class="marker" x1="' + m.x.toFixed(1) + '" y1="' + scopeY.toFixed(1) +
+          '" x2="' + m.x.toFixed(1) + '" y2="' + axisY.toFixed(1) + '"/>';
+        svg += '<text class="tick mark" x="' + m.x.toFixed(1) + '" y="' + (FC_PAD.top + 9) +
+          '" text-anchor="middle">' + m.label + "</text>";
+      });
+    }
+
+    svg += '<path class="curve" d="' + curve + '"/>';
+    svg += '<circle class="head-dot" cx="' + headX.toFixed(1) + '" cy="' + headY.toFixed(1) + '" r="4"/>';
+
+    svg += '<g id="fc-hover" class="off"><line class="cross" y1="' + FC_PAD.top + '" y2="' + axisY.toFixed(1) +
+      '"/><circle class="head-dot" r="4"/></g>';
+    svg += '<rect class="hit" id="fc-hit" x="' + FC_PAD.left + '" y="' + FC_PAD.top +
+      '" width="' + plotW + '" height="' + plotH + '"/>';
+
+    return '<svg viewBox="0 0 ' + width + " " + FORECAST_HEIGHT + '" role="img" aria-label="' +
+      esc(forecastCaption(f)) + '">' + svg + "</svg>";
+  }
+
+  // Every number the chart encodes, in words - so the projection is never gated behind reading
+  // a colour, a dash pattern or an axis.
+  function forecastCaption(f) {
+    var done = size(f.completedSize, f.hasImputed) + " of " + size(f.totalSize, f.hasImputed) + " finished";
+
+    if (!f.available) return done + ". " + (f.unavailableReason || "");
+
+    var rate = num(f.meanWeeklyThroughput) + " " + UNIT + " a week over the last " +
+      f.samples.length + " complete week" + (f.samples.length === 1 ? "" : "s");
+
+    if (!f.p85Date) {
+      return done + ". At " + rate + ", the remaining " + size(f.remainingSize, f.hasImputed) +
+        " is further out than this report projects.";
+    }
+
+    return done + ". At " + rate + ", the remaining " + size(f.remainingSize, f.hasImputed) +
+      " lands around " + shortDate(f.p50Date) + " at even odds, and by " + shortDate(f.p85Date) +
+      " in 85% of " + f.simulations.toLocaleString() + " simulated finishes.";
+  }
+
+  function renderForecast() {
+    var f = MODEL.forecast;
+
+    if (!f || f.suppressed || t.issueCount === 0) { forecastEl.hidden = true; return; }
+    forecastEl.hidden = false;
+
+    var caveats = [];
+    if (f.undatedCreditSize > 0) {
+      caveats.push("The headline also counts " + size(f.undatedCreditSize, f.hasImputed) +
+        " of in-progress credit, which carries no completion date; this counts only finished " +
+        "work, so the curve ends just below the headline.");
+    }
+    if (f.baselineSize > 0) {
+      caveats.push(size(f.baselineSize, f.hasImputed) +
+        " of finished work has no resolution date and sits in the curve from the start.");
+    }
+    if (f.hasImputed) {
+      caveats.push("Figures marked ~ include stand-in estimates rather than measured ones.");
+    }
+    caveats.push("Scope is today's query: work added along the way looks as though it was " +
+      "always there, so a growing project finishes later than this says.");
+
+    forecastEl.innerHTML =
+      "<h2>Projected completion</h2>" +
+      '<p class="hint">' + esc(forecastCaption(f)) + "</p>" +
+      '<div class="chart" id="fc-chart"></div>' +
+      (f.burnup.length ? '<p class="unavailable">' + esc(caveats.join(" ")) + "</p>" : "");
+
+    drawForecastChart();
+  }
+
+  // Redrawn at the container's real width rather than scaled by the browser, so the axis labels
+  // stay at a readable size on a narrow window instead of shrinking with the plot.
+  function drawForecastChart() {
+    var host = document.getElementById("fc-chart");
+    if (!host) return;
+
+    var width = Math.max(240, Math.round(host.clientWidth));
+    host.innerHTML = forecastChart(MODEL.forecast, width);
+    bindForecastHover();
+  }
+
+  function bindForecastHover() {
+    var hit = document.getElementById("fc-hit");
+    var hover = document.getElementById("fc-hover");
+    if (!hit || !hover || !fcGeometry) return;
+
+    var svg = hit.ownerSVGElement;
+    var line = hover.querySelector("line");
+    var dot = hover.querySelector("circle");
+
+    hit.addEventListener("mousemove", function (event) {
+      var box = svg.getBoundingClientRect();
+      // The SVG is drawn at its own width but laid out responsively, so a client x has to be
+      // mapped back through whatever scale the browser settled on.
+      var userX = (event.clientX - box.left) * (svg.viewBox.baseVal.width / box.width);
+
+      var nearest = fcGeometry.points[0];
+      var best = Infinity;
+      fcGeometry.points.forEach(function (p) {
+        var distance = Math.abs(fcGeometry.sx(p.ms) - userX);
+        if (distance < best) { best = distance; nearest = p; }
+      });
+
+      var x = fcGeometry.sx(nearest.ms);
+      var y = fcGeometry.sy(nearest.done);
+      line.setAttribute("x1", x);
+      line.setAttribute("x2", x);
+      dot.setAttribute("cx", x);
+      dot.setAttribute("cy", y);
+      hover.classList.remove("off");
+
+      tip.innerHTML =
+        '<div class="t-title">Week of ' + esc(formatDate(new Date(nearest.ms).toISOString())) + "</div>" +
+        '<div class="t-row"><span class="lhs">Finished that week</span><span class="rhs">' +
+          esc(size(nearest.week, fcGeometry.hasImputed)) + "</span></div>" +
+        '<div class="t-row"><span class="lhs">Finished in total</span><span class="rhs">' +
+          esc(size(nearest.done, fcGeometry.hasImputed)) + "</span></div>";
+      tip.classList.add("on");
+      tip.setAttribute("aria-hidden", "false");
+    });
+
+    hit.addEventListener("mouseleave", function () {
+      hover.classList.add("off");
+      tip.classList.remove("on");
+      tip.setAttribute("aria-hidden", "true");
+    });
+  }
+
+  var forecastResizeTimer = null;
+  var forecastWidth = 0;
+  window.addEventListener("resize", function () {
+    var host = document.getElementById("fc-chart");
+    if (!host || host.clientWidth === forecastWidth) return;
+    forecastWidth = host.clientWidth;
+
+    clearTimeout(forecastResizeTimer);
+    forecastResizeTimer = setTimeout(drawForecastChart, 120);
+  });
 
   // ---- epic list ------------------------------------------------------------
 
@@ -1036,6 +1365,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
     renderViewPills(index);
     renderMeta();
     renderHeadline();
+    renderForecast();
     renderKpis();
     renderTable();
     renderFooter();

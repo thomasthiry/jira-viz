@@ -20,6 +20,9 @@ public sealed class ReportModel
     public double? ImputedPoints { get; init; }
 
     public required PortfolioTotals Totals { get; init; }
+
+    /// <summary>When this scope reaches 100%, and the history that claim rests on.</summary>
+    public required ForecastView Forecast { get; init; }
     public required IReadOnlyList<EpicView> Epics { get; init; }
     public required IReadOnlyList<StalledIssue> Stalled { get; init; }
 

@@ -84,6 +84,9 @@ public static class OptionsLoader
                 case "--points-field": options.StoryPointsFieldId = Next(args, ref i, arg); break;
                 case "--epic-link-field": options.EpicLinkFieldId = Next(args, ref i, arg); break;
                 case "--stalled-days": options.StalledDays = NextInt(args, ref i, arg); break;
+                case "--forecast-weeks": options.Forecast.WindowWeeks = NextInt(args, ref i, arg); break;
+                case "--forecast-sims": options.Forecast.Simulations = NextInt(args, ref i, arg); break;
+                case "--no-forecast": options.Forecast.Enabled = false; break;
                 case "--page-size": options.PageSize = NextInt(args, ref i, arg); break;
                 case "--open": options.OpenWhenDone = true; break;
                 case "--insecure": options.InsecureTls = true; break;
@@ -129,6 +132,9 @@ public static class OptionsLoader
               --token <pat>        Personal Access Token (prefer the JIRAVIZ_TOKEN env var)
               --user <name>        Switch to Basic auth, for instances predating PATs
               --stalled-days <n>   Days without an update before in-progress work is stalled (default: 14)
+              --forecast-weeks <n> Recent complete weeks the completion date is projected from (default: 12)
+              --forecast-sims <n>  Simulated finishes behind the projected dates (default: 10000)
+              --no-forecast        Leave the projected completion date off the report
               --epic-type <name>   Epic issue type name, if renamed (default: Epic)
               --points-field <id>  Story Points customfield id, skipping discovery
               --epic-link-field <id>  Epic Link customfield id, skipping discovery

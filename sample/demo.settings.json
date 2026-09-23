@@ -7,6 +7,12 @@
   "outputPath": "out/report.html",
   "defaultViewName": "All open work",
 
+  "forecast": {
+    "enabled": true,
+    "windowWeeks": 12,
+    "simulations": 10000
+  },
+
   "views": [
     { "name": "Release 24.2", "jql": "fixVersion = \"24.2\"" },
     { "name": "Release 24.3", "jql": "fixVersion = \"24.3\"" },
