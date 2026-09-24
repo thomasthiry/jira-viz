@@ -50,8 +50,15 @@ try
     // same everywhere and the milestone views stay comparable with the whole project.
     double? sharedImputedPoints = null;
 
+    // Taken from the base view only, and never from a milestone: a milestone's own rate is a
+    // share of the team's output, not the team's output, and treating one as the other would
+    // hand every milestone the whole team and commit that capacity several times over.
+    double? sharedProjectVelocity = null;
+
     foreach (var (name, jql) in requested)
     {
+        var isBaseView = views.Count == 0;
+
         Console.WriteLine();
         Console.WriteLine($"[{name}] {jql}");
 
@@ -68,7 +75,8 @@ try
             Console.WriteLine($"  pulled in {issues.Count - matched} ancestor(s) to complete the hierarchy");
 
         var (groups, warnings) = new HierarchyBuilder(options.EpicIssueTypeName).Build(issues);
-        var model = new ProgressCalculator(bucketer, options.StalledDays, sharedImputedPoints, options.Forecast)
+        var model = new ProgressCalculator(
+                bucketer, options.StalledDays, sharedImputedPoints, options.Forecast, sharedProjectVelocity)
             .Build(groups, warnings, options.BaseUrl, jql, generatedAt);
 
         if (sharedImputedPoints is null && model.ImputedPoints is not null)
@@ -77,6 +85,9 @@ try
             Console.WriteLine($"  unestimated stories counted as {model.ImputedPoints:0.#} pts"
                               + " (project-wide average of the estimated ones)");
         }
+
+        if (isBaseView && model.Forecast.MeanWeeklyThroughput > 0)
+            sharedProjectVelocity = model.Forecast.MeanWeeklyThroughput;
 
         views.Add(new ReportView { Name = name, Jql = jql, Model = model });
 
@@ -148,13 +159,20 @@ static void ReportForecast(ReportModel model)
     // Someone who passed --no-forecast does not need telling once per view that it is off.
     if (forecast.Suppressed) return;
 
+    var unit = model.CountBasedSizing ? "issues" : "pts";
+
+    // Printed whether or not a date came out, since a view too thin to carry one is exactly
+    // where knowing the size of the remainder is worth most.
+    if (forecast.TeamWeeksRemaining is { } teamWeeks)
+        Console.WriteLine($"  {teamWeeks:0.#} team-week(s) of work left at the project's "
+                          + $"{forecast.ProjectVelocity:0.#} {unit}/week");
+
     if (!forecast.Available)
     {
         if (forecast.UnavailableReason is not null) Console.WriteLine($"  no projection: {forecast.UnavailableReason}");
         return;
     }
 
-    var unit = model.CountBasedSizing ? "issues" : "pts";
     Console.WriteLine($"  {forecast.MeanWeeklyThroughput:0.#} {unit}/week over the last "
                       + $"{forecast.Samples.Count} week(s); {forecast.RemainingSize:0.#} {unit} left");
 

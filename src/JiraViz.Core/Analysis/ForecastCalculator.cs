@@ -59,11 +59,16 @@ public sealed class ForecastCalculator(ForecastSettings settings)
     /// </summary>
     private const ulong Seed = 0x6A09E667F3BCC908UL;
 
+    /// <param name="projectVelocity">
+    /// The whole project's weekly rate, for sizing this view's remainder in team-weeks. Null on
+    /// the base view, which is where the figure comes from in the first place.
+    /// </param>
     public ForecastView Build(
         IReadOnlyList<CreditEvent> credits,
         double totalSize,
         bool hasImputed,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        double? projectVelocity = null)
     {
         // Undated finished work still happened, so it is credited to the whole curve rather than
         // dropped; in-progress credit is only ever reported.
@@ -77,6 +82,10 @@ public sealed class ForecastCalculator(ForecastSettings settings)
 
         var completed = baseline + dated.Sum(c => c.Amount);
         var remaining = Math.Max(0, totalSize - completed);
+
+        // Worked out before any of the early returns below: a milestone with too little history
+        // of its own to carry a date is exactly the one this figure exists for.
+        var teamWeeks = projectVelocity is > 0 ? remaining / projectVelocity.Value : (double?)null;
 
         if (!_settings.Enabled)
             return Unavailable("Projection is switched off for this report.", suppressed: true);
@@ -109,6 +118,8 @@ public sealed class ForecastCalculator(ForecastSettings settings)
                 MeanWeeklyThroughput = samples.Count > 0 ? samples.Average() : 0,
                 Simulations = 0,
                 BeyondHorizonShare = 0,
+                ProjectVelocity = projectVelocity,
+                TeamWeeksRemaining = teamWeeks,
                 HasImputed = hasImputed,
             };
 
@@ -143,6 +154,8 @@ public sealed class ForecastCalculator(ForecastSettings settings)
             P50Date = p50 <= HorizonWeeks ? now.AddDays(p50 * 7) : null,
             P85Date = p85 <= HorizonWeeks ? now.AddDays(p85 * 7) : null,
             BeyondHorizonShare = beyond,
+            ProjectVelocity = projectVelocity,
+            TeamWeeksRemaining = teamWeeks,
             HasImputed = hasImputed,
         };
 
@@ -166,6 +179,8 @@ public sealed class ForecastCalculator(ForecastSettings settings)
             MeanWeeklyThroughput = drawn is { Count: > 0 } ? drawn.Average() : 0,
             Simulations = 0,
             BeyondHorizonShare = 0,
+            ProjectVelocity = projectVelocity,
+            TeamWeeksRemaining = teamWeeks,
             HasImputed = hasImputed,
         };
     }

@@ -707,6 +707,7 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
     var f = MODEL.forecast;
 
     if (f && !f.suppressed) {
+      var label = "Projected 100%";
       var value = f.available && f.p50Date ? shortDate(f.p50Date) : "&mdash;";
       var note = f.available
         ? (f.p85Date
@@ -714,7 +715,16 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
             : "further out than this report projects")
         : esc(f.unavailableReason || "");
 
-      kpiHtml += '<div class="kpi"><div class="label">Projected 100%</div>' +
+      // No date to give, but the remainder still has a size. A milestone nobody is working on
+      // would otherwise read as a dash, when how much work it holds is the next thing worth
+      // knowing - so the tile changes what it is measuring, and says so.
+      if (!(f.available && f.p50Date) && f.teamWeeksRemaining > 0) {
+        label = "Work remaining";
+        value = teamWeeks(f.teamWeeksRemaining);
+        note = "team-weeks at the project's rate &middot; no date projected";
+      }
+
+      kpiHtml += '<div class="kpi"><div class="label">' + label + "</div>" +
         '<div class="value">' + value + "</div>" +
         '<div class="note">' + note + "</div></div>";
     }
@@ -900,24 +910,41 @@ footer.foot { color: var(--text-muted); font-size: 12px; text-align: center; mar
       esc(forecastCaption(f)) + '">' + svg + "</svg>";
   }
 
+  // A duration reads better rounded than a size does: whole weeks once there are more than a
+  // handful, since a tenth of a week is well inside the noise this figure carries anyway.
+  function teamWeeks(value) {
+    return value >= 10 ? String(Math.round(value)) : String(Math.round(value * 10) / 10);
+  }
+
+  // The remainder as a size rather than a date - the one thing the project's own rate can say
+  // about a single milestone without handing it the whole team. Absent on the base view, where
+  // it would only restate the rate the milestones borrow.
+  function teamWeeksSentence(f) {
+    if (f.teamWeeksRemaining == null || !(f.teamWeeksRemaining > 0)) return "";
+
+    return " That is about " + teamWeeks(f.teamWeeksRemaining) + " team-week" +
+      (teamWeeks(f.teamWeeksRemaining) === "1" ? "" : "s") + " of work at the project's overall " +
+      num(f.projectVelocity) + " " + UNIT + " a week, if it had the whole team's attention.";
+  }
+
   // Every number the chart encodes, in words - so the projection is never gated behind reading
   // a colour, a dash pattern or an axis.
   function forecastCaption(f) {
     var done = size(f.completedSize, f.hasImputed) + " of " + size(f.totalSize, f.hasImputed) + " finished";
 
-    if (!f.available) return done + ". " + (f.unavailableReason || "");
+    if (!f.available) return done + ". " + (f.unavailableReason || "") + teamWeeksSentence(f);
 
     var rate = num(f.meanWeeklyThroughput) + " " + UNIT + " a week over the last " +
       f.samples.length + " complete week" + (f.samples.length === 1 ? "" : "s");
 
     if (!f.p85Date) {
       return done + ". At " + rate + ", the remaining " + size(f.remainingSize, f.hasImputed) +
-        " is further out than this report projects.";
+        " is further out than this report projects." + teamWeeksSentence(f);
     }
 
     return done + ". At " + rate + ", the remaining " + size(f.remainingSize, f.hasImputed) +
       " lands around " + shortDate(f.p50Date) + " at even odds, and by " + shortDate(f.p85Date) +
-      " in 85% of " + f.simulations.toLocaleString() + " simulated finishes.";
+      " in 85% of " + f.simulations.toLocaleString() + " simulated finishes." + teamWeeksSentence(f);
   }
 
   function renderForecast() {

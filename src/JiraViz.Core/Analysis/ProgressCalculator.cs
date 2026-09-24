@@ -17,11 +17,18 @@ public sealed class ProgressCalculator(
     StatusBucketer bucketer,
     int stalledDays,
     double? sharedImputedPoints = null,
-    ForecastSettings? forecast = null)
+    ForecastSettings? forecast = null,
+    double? sharedProjectVelocity = null)
 {
     private readonly StatusBucketer _bucketer = bucketer;
     private readonly int _stalledDays = stalledDays;
     private readonly ForecastSettings _forecast = forecast ?? new ForecastSettings();
+
+    /// <summary>
+    /// The base view's weekly rate, so a milestone can state its remainder in weeks of the whole
+    /// team's output. Null for the base view itself, which is what produces the figure.
+    /// </summary>
+    private readonly double? _sharedProjectVelocity = sharedProjectVelocity;
 
     /// <summary>
     /// Every piece of completion credit awarded below, with the date it was earned. Collected
@@ -96,7 +103,7 @@ public sealed class ProgressCalculator(
         };
 
         var forecast = new ForecastCalculator(_forecast)
-            .Build(_credits, totalSize, totals.HasImputed, now);
+            .Build(_credits, totalSize, totals.HasImputed, now, _sharedProjectVelocity);
 
         return new ReportModel
         {

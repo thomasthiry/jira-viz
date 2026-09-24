@@ -150,6 +150,30 @@ What it does and does not claim:
 - Under eight complete weeks of history, no projection is offered &mdash; percentiles drawn from
   three data points would be dressing up noise.
 
+### Milestones: dates from their own rate, size from the project's
+
+Each view projects from **its own** throughput, because those rates sum back to the project's.
+Handing every milestone the full team's velocity instead would read off four dates that each
+assume exclusive use of the team, committing the same capacity several times over &mdash; a set
+of dates that cannot all be true, and all of them early.
+
+The cost is that a narrow slice has thinner evidence, so its band is wider. That is the correct
+signal, not a defect: a milestone nobody has touched in two months *should* project badly.
+
+So the project's rate is used for the one thing it can honestly say about a single milestone
+&mdash; how big the remainder is, in **team-weeks**: the work left divided by the whole project's
+weekly rate. It is a size expressed in time, not a date, so it cannot be mistaken for a
+commitment and four of them side by side do not overcommit anybody.
+
+The two readings answer different questions, and the gap between them is the useful part. In the
+demo data, Release 24.4 projects to **Feb 2030** at its own 0.3 pts/week, yet holds only **12
+team-weeks** of work &mdash; the smallest remainder of the four milestones. The date is about
+neglect, not size.
+
+Team-weeks appear on every milestone view and are **absent from the base view**, where they would
+only restate its own rate. They survive a view too thin to carry a date at all, which is where
+they earn their place: the KPI tile then shows the remaining size instead of a dash.
+
 ## Layout
 
 | Path | What it is |

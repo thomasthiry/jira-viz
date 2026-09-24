@@ -240,6 +240,63 @@ public class ForecastCalculatorTests
     }
 
     [Fact]
+    public void A_milestone_sizes_its_remainder_against_the_projects_rate()
+    {
+        // The milestone is crawling at 1 a week of its own, but the team as a whole does 10.
+        var forecast = new ForecastCalculator(Settings())
+            .Build(WeeklyHistory(Steady(1, 12)), 112, hasImputed: false, Now, projectVelocity: 10);
+
+        Assert.Equal(100, forecast.RemainingSize);
+        Assert.Equal(10, forecast.ProjectVelocity);
+        Assert.Equal(10, forecast.TeamWeeksRemaining);
+
+        // ... and the date still comes from the milestone's own rate, not the project's, so it
+        // lands a hundred weeks out rather than ten.
+        Assert.Equal(100, forecast.P50Weeks);
+    }
+
+    [Fact]
+    public void The_base_view_has_no_team_weeks_figure_of_its_own()
+    {
+        var forecast = Build(Steady(10, 12), totalSize: 220);
+
+        Assert.Null(forecast.ProjectVelocity);
+        Assert.Null(forecast.TeamWeeksRemaining);
+    }
+
+    [Fact]
+    public void Team_weeks_survive_a_view_too_thin_to_carry_a_date()
+    {
+        // The whole point of the figure: four weeks of history is not enough to project from,
+        // but the remainder still has a knowable size.
+        var forecast = new ForecastCalculator(Settings())
+            .Build(WeeklyHistory(Steady(2, 4)), 108, hasImputed: false, Now, projectVelocity: 10);
+
+        Assert.False(forecast.Available);
+        Assert.Null(forecast.P50Date);
+        Assert.Equal(10, forecast.TeamWeeksRemaining);
+    }
+
+    [Fact]
+    public void A_finished_milestone_has_no_work_left_to_size()
+    {
+        var forecast = new ForecastCalculator(Settings())
+            .Build(WeeklyHistory(Steady(10, 12)), 120, hasImputed: false, Now, projectVelocity: 10);
+
+        Assert.Equal(0, forecast.RemainingSize);
+        Assert.Equal(0, forecast.TeamWeeksRemaining);
+    }
+
+    [Fact]
+    public void A_project_rate_of_nothing_is_not_divided_by()
+    {
+        var forecast = new ForecastCalculator(Settings())
+            .Build(WeeklyHistory(Steady(10, 12)), 220, hasImputed: false, Now, projectVelocity: 0);
+
+        Assert.Null(forecast.TeamWeeksRemaining);
+    }
+
+    [Fact]
     public void Percentiles_read_off_the_ranked_runs()
     {
         var runs = new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };

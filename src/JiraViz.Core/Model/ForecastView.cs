@@ -65,6 +65,25 @@ public sealed class ForecastView
     /// <summary>Share of runs still unfinished at the simulation horizon, as a fraction.</summary>
     public required double BeyondHorizonShare { get; init; }
 
+    /// <summary>
+    /// The whole project's weekly rate, taken from the base view and reused here. Null on the
+    /// base view itself, where it would only restate <see cref="MeanWeeklyThroughput"/>.
+    /// </summary>
+    public double? ProjectVelocity { get; init; }
+
+    /// <summary>
+    /// What is left expressed as weeks of the whole team's output rather than as a date: the
+    /// remainder divided by the project's rate.
+    ///
+    /// It says how big this slice is, not when it lands, which is the only thing a project-wide
+    /// rate can honestly say about one milestone. Handing every milestone the full team's
+    /// velocity and reading dates off it would commit the same capacity several times over and
+    /// produce a set of dates that cannot all be true; per-milestone rates, by contrast, sum
+    /// back to the project's. Survives a view with too little history to project a date at all,
+    /// which is where it earns its place.
+    /// </summary>
+    public double? TeamWeeksRemaining { get; init; }
+
     /// <summary>True when imputed estimates contributed to the sizes being projected.</summary>
     public required bool HasImputed { get; init; }
 }
